@@ -1,0 +1,721 @@
+import { useState, useRef, useCallback, useEffect } from "react";
+
+// ─── THEMES ──────────────────────────────────────────────────
+const DARK = {
+  name: "Midnight Atelier",
+  bg: "#0D1B2A", bgCard: "#152236", bgDeep: "#091422", bgNav: "#0D1B2A",
+  accent: "#D4AF7A", accentLight: "#E8C99A",
+  accentDim: "rgba(212,175,122,0.11)", accentBorder: "rgba(212,175,122,0.24)", accentBorderHi: "rgba(212,175,122,0.50)",
+  text: "#F5F0E8", textMuted: "rgba(245,240,232,0.42)", textSub: "rgba(245,240,232,0.66)",
+  border: "rgba(212,175,122,0.15)", borderHi: "rgba(212,175,122,0.30)",
+  heroGlow: "radial-gradient(ellipse at 60% 0%, rgba(212,175,122,0.17) 0%, transparent 65%)",
+  splashGlow: "radial-gradient(ellipse at 50% 30%, rgba(212,175,122,0.20) 0%, transparent 60%)",
+  btn: "linear-gradient(135deg,#9E7A1E,#D4AF7A,#9E7A1E)", btnText: "#0D1B2A",
+  shadow: "0 8px 40px rgba(9,20,34,0.75)", shadowGold: "0 4px 24px rgba(212,175,122,0.28)",
+  emoji: "🌙",
+};
+const LIGHT = {
+  name: "Pearl Morning",
+  bg: "#F5F0E5", bgCard: "#FFFFFF", bgDeep: "#EDE8DC", bgNav: "#F5F0E5",
+  accent: "#8B4A2F", accentLight: "#C0843F",
+  accentDim: "rgba(139,74,47,0.07)", accentBorder: "rgba(139,74,47,0.17)", accentBorderHi: "rgba(139,74,47,0.40)",
+  text: "#1A0F08", textMuted: "rgba(26,15,8,0.42)", textSub: "rgba(26,15,8,0.63)",
+  border: "rgba(139,74,47,0.12)", borderHi: "rgba(139,74,47,0.25)",
+  heroGlow: "radial-gradient(ellipse at 60% 0%, rgba(192,132,63,0.10) 0%, transparent 65%)",
+  splashGlow: "radial-gradient(ellipse at 50% 30%, rgba(192,132,63,0.14) 0%, transparent 60%)",
+  btn: "linear-gradient(135deg,#6B3420,#C0843F,#6B3420)", btnText: "#F5F0E5",
+  shadow: "0 8px 40px rgba(139,74,47,0.10)", shadowGold: "0 4px 24px rgba(139,74,47,0.15)",
+  emoji: "☀️",
+};
+const OCC_THEME = { daily:"light", brunch:"light", interview:"light", outdoor:"light", date:"dark", wedding:"dark", party:"dark", graduation:"dark" };
+const OCCS = [
+  {id:"daily",label:"Daily Work",icon:"☀️",t:"light"},
+  {id:"date",label:"Date Night",icon:"🌙",t:"dark"},
+  {id:"wedding",label:"Wedding",icon:"💍",t:"dark"},
+  {id:"brunch",label:"Brunch",icon:"🥂",t:"light"},
+  {id:"party",label:"Girls Night",icon:"✨",t:"dark"},
+  {id:"interview",label:"Job Interview",icon:"💼",t:"light"},
+  {id:"graduation",label:"Graduation",icon:"🎓",t:"dark"},
+  {id:"outdoor",label:"Outdoor Event",icon:"🌿",t:"light"},
+];
+const GLAM = [
+  {id:"casual",label:"Casual",sub:"Natural & Effortless",dot:1},
+  {id:"medium",label:"Medium Glam",sub:"Polished & Refined",dot:2},
+  {id:"full",label:"Full Glam",sub:"Dramatic & Stunning",dot:3},
+];
+const SCAN_ANGLES = [
+  { id:"front",      title:"LOOK STRAIGHT AHEAD",   sub:"Center your face in the circle",        icon:"⊙", instruction:"Hold your phone at eye level. Face the camera directly." },
+  { id:"left",       title:"TURN SLIGHTLY LEFT",    sub:"Show the right side of your face",      icon:"↶", instruction:"Slowly turn your head 30° to your left." },
+  { id:"right",      title:"TURN SLIGHTLY RIGHT",   sub:"Show the left side of your face",       icon:"↷", instruction:"Slowly turn your head 30° to your right." },
+  { id:"up",         title:"TILT YOUR CHIN UP",     sub:"Show your jawline & neck",              icon:"↑", instruction:"Lift your chin slightly to reveal your jawline." },
+  { id:"down",       title:"TILT YOUR CHIN DOWN",   sub:"Show your forehead & brow",             icon:"↓", instruction:"Lower your chin slightly to show your forehead." },
+];
+
+const FF = "'Palatino Linotype','Book Antiqua',Palatino,serif";
+
+// ─── ROOT ────────────────────────────────────────────────────
+export default function Lumiere() {
+  const [screen, setScreen] = useState("splash");
+  const [profile, setProfile] = useState({name:"",age:"",skinType:"",skinTone:""});
+  const [pStep, setPStep] = useState(0);
+  const [scans, setScans] = useState({});
+  const [glam, setGlam] = useState("medium");
+  const [occ, setOcc] = useState(null);
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [tab, setTab] = useState("home");
+  const [looks, setLooks] = useState([]);
+  const [notif, setNotif] = useState(null);
+  const [manual, setManual] = useState("dark");
+
+  const T = occ ? (OCC_THEME[occ]==="light" ? LIGHT : DARK) : (manual==="dark" ? DARK : LIGHT);
+  const notify = m => { setNotif(m); setTimeout(()=>setNotif(null),3500); };
+  const hasFullScan = SCAN_ANGLES.every(a => scans[a.id]);
+  const primaryFace = scans.front || Object.values(scans)[0] || null;
+
+  // 🔒 NOW CALLS YOUR SECURE BACKEND — NOT Anthropic directly!
+  const analyze = useCallback(async () => {
+    if (!hasFullScan || !occ) return;
+    setLoading(true); setResult(null);
+    try {
+      const occLabel = OCCS.find(o=>o.id===occ)?.label || "General";
+      const images = SCAN_ANGLES.map(a => scans[a.id]);
+
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ images, occasion: occLabel, glam }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        notify(err.error || "Analysis failed. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      const parsed = await res.json();
+      setResult(parsed);
+      setScreen("results");
+    } catch (e) {
+      notify("Network error. Please try again.");
+    }
+    setLoading(false);
+  }, [scans, glam, occ, hasFullScan]);
+
+  const saveLook = () => {
+    if (!result) return;
+    setLooks(p=>[{id:Date.now(), lookName:result.lookName, occasion:OCCS.find(o=>o.id===occ)?.label, occ, glam, preview:primaryFace, date:new Date().toLocaleDateString(), dk:OCC_THEME[occ]||"dark"}, ...p]);
+    notify("✨ Look saved!");
+  };
+
+  const resetScan = () => setScans({});
+
+  if (screen==="splash") return <Splash T={DARK} go={()=>setScreen("onboard")}/>;
+  if (screen==="onboard") return <Onboard T={DARK} profile={profile} setProfile={setProfile} step={pStep} setStep={setPStep} done={()=>setScreen("main")}/>;
+  if (screen==="camera") return <CameraScan T={T} scans={scans} setScans={setScans} onDone={()=>setScreen("main")} onCancel={()=>setScreen("main")} notify={notify}/>;
+  if (screen==="results") return <Results T={T} result={result} preview={primaryFace} occ={OCCS.find(o=>o.id===occ)} glam={glam} onSave={saveLook} onBack={()=>setScreen("main")} onNew={()=>{setResult(null); setScreen("main"); setTab("scan");}}/>;
+
+  return (
+    <Shell T={T} manual={manual} setManual={setManual} occ={occ} profile={profile} tab={tab} setTab={setTab} notif={notif}>
+      {tab==="home" && <Home T={T} profile={profile} preview={primaryFace} looks={looks} setTab={setTab}/>}
+      {tab==="scan" && <Scan T={T} scans={scans} hasFullScan={hasFullScan} primaryFace={primaryFace} startCamera={()=>setScreen("camera")} resetScan={resetScan} glam={glam} setGlam={setGlam} occ={occ} setOcc={setOcc} analyze={analyze} loading={loading}/>}
+      {tab==="looks" && <Looks T={T} looks={looks}/>}
+      {tab==="profile" && <Profile T={T} profile={profile} preview={primaryFace} hasFullScan={hasFullScan} startCamera={()=>setScreen("camera")}/>}
+    </Shell>
+  );
+}
+
+// ─── CAMERA SCAN ─────────────────────────────────────────────
+function CameraScan({ T, scans, setScans, onDone, onCancel, notify }) {
+  const videoRef = useRef();
+  const canvasRef = useRef();
+  const streamRef = useRef();
+  const [angleIdx, setAngleIdx] = useState(0);
+  const [countdown, setCountdown] = useState(null);
+  const [capturing, setCapturing] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [error, setError] = useState(null);
+
+  const angle = SCAN_ANGLES[angleIdx];
+  const captured = scans[angle?.id];
+  const allDone = angleIdx >= SCAN_ANGLES.length;
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 1280 } },
+          audio: false
+        });
+        if (!mounted) { stream.getTracks().forEach(t=>t.stop()); return; }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.onloadedmetadata = () => setCameraReady(true);
+        }
+      } catch (e) {
+        setError("Camera access denied. Please allow camera access in your browser settings and refresh.");
+      }
+    })();
+    return () => {
+      mounted = false;
+      streamRef.current?.getTracks().forEach(t => t.stop());
+    };
+  }, []);
+
+  const capturePhoto = useCallback(() => {
+    if (!videoRef.current || !canvasRef.current) return null;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const size = Math.min(video.videoWidth, video.videoHeight);
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    const sx = (video.videoWidth - size) / 2;
+    const sy = (video.videoHeight - size) / 2;
+    ctx.translate(size, 0); ctx.scale(-1, 1);
+    ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size);
+    return canvas.toDataURL("image/jpeg", 0.9);
+  }, []);
+
+  const handleCapture = useCallback(() => {
+    if (!cameraReady || capturing || allDone) return;
+    setCapturing(true);
+    setCountdown(3);
+    let n = 3;
+    const interval = setInterval(() => {
+      n--;
+      if (n > 0) setCountdown(n);
+      else {
+        clearInterval(interval);
+        setCountdown(null);
+        const photo = capturePhoto();
+        if (photo) {
+          setScans(prev => ({ ...prev, [angle.id]: photo }));
+          setTimeout(() => {
+            setCapturing(false);
+            if (angleIdx < SCAN_ANGLES.length - 1) setAngleIdx(i => i + 1);
+          }, 600);
+        } else {
+          setCapturing(false);
+        }
+      }
+    }, 1000);
+  }, [cameraReady, capturing, allDone, angleIdx, angle, capturePhoto, setScans]);
+
+  const finishScan = () => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    notify("✨ Face scan complete!");
+    onDone();
+  };
+
+  if (error) return (
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:30,fontFamily:FF,maxWidth:480,margin:"0 auto"}}>
+      <div style={{fontSize:40,marginBottom:20}}>📷</div>
+      <div style={{fontSize:16,color:T.text,textAlign:"center",marginBottom:10,fontWeight:300}}>Camera Access Needed</div>
+      <div style={{fontSize:12,color:T.textMuted,textAlign:"center",lineHeight:1.7,marginBottom:24}}>{error}</div>
+      <button style={{background:T.btn,color:T.btnText,border:"none",padding:"14px 28px",fontSize:10,letterSpacing:4,fontWeight:700,cursor:"pointer"}} onClick={onCancel}>← BACK</button>
+    </div>
+  );
+
+  if (allDone) return (
+    <div style={{minHeight:"100vh",background:T.bg,fontFamily:FF,maxWidth:480,margin:"0 auto",padding:24}}>
+      <div style={{textAlign:"center",marginBottom:24}}>
+        <div style={{fontSize:32,marginBottom:8}}>✨</div>
+        <div style={{fontSize:20,color:T.text,fontWeight:300,letterSpacing:3,marginBottom:6}}>SCAN COMPLETE</div>
+        <div style={{fontSize:11,color:T.textMuted,letterSpacing:1}}>5 angles captured · Full 360° analysis ready</div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:24}}>
+        {SCAN_ANGLES.map(a => (
+          <div key={a.id} style={{position:"relative",aspectRatio:"1",overflow:"hidden",border:`1px solid ${T.accentBorder}`}}>
+            <img src={scans[a.id]} alt={a.id} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+            <div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(to top,rgba(0,0,0,0.85),transparent)",padding:"12px 6px 4px",display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
+              <span style={{fontSize:10,color:T.accent}}>{a.icon}</span>
+              <span style={{fontSize:7,color:"#fff",letterSpacing:1}}>{a.id.toUpperCase()}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <button style={{width:"100%",background:T.btn,color:T.btnText,border:"none",padding:"17px",fontSize:11,letterSpacing:5,fontWeight:700,cursor:"pointer",marginBottom:8,boxShadow:T.shadowGold}} onClick={finishScan}>◆ USE THIS SCAN</button>
+      <button style={{width:"100%",background:"transparent",border:`1px solid ${T.border}`,color:T.textMuted,padding:"15px",fontSize:9,letterSpacing:3,cursor:"pointer"}} onClick={()=>{setAngleIdx(0); setScans({});}}>↻ RESCAN ALL</button>
+    </div>
+  );
+
+  return (
+    <div style={{minHeight:"100vh",background:"#000",fontFamily:FF,maxWidth:480,margin:"0 auto",position:"relative",overflow:"hidden"}}>
+      <canvas ref={canvasRef} style={{display:"none"}}/>
+      <div style={{position:"absolute",top:0,left:0,right:0,zIndex:10,background:"linear-gradient(to bottom,rgba(0,0,0,0.7),transparent)",padding:"16px 18px 28px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <button style={{background:"transparent",border:"none",color:"#fff",fontSize:11,letterSpacing:2,cursor:"pointer"}} onClick={onCancel}>✕ CANCEL</button>
+          <div style={{fontSize:9,letterSpacing:3,color:T.accent}}>{angleIdx+1} OF {SCAN_ANGLES.length}</div>
+        </div>
+        <div style={{display:"flex",gap:5,justifyContent:"center"}}>
+          {SCAN_ANGLES.map((a, i) => (
+            <div key={a.id} style={{
+              width: i===angleIdx ? 20 : 6, height:4,
+              background: scans[a.id] ? T.accent : i===angleIdx ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.25)",
+              transition:"all 0.3s"
+            }}/>
+          ))}
+        </div>
+      </div>
+      <div style={{position:"relative",height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#000"}}>
+        <video ref={videoRef} autoPlay playsInline muted style={{width:"100%",height:"100%",objectFit:"cover",transform:"scaleX(-1)"}}/>
+        <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+          <div style={{
+            width:280, height:340, borderRadius:"50%",
+            border: capturing ? `3px solid ${T.accent}` : `2px dashed rgba(255,255,255,0.45)`,
+            boxShadow: capturing ? `0 0 60px ${T.accent}` : "0 0 200px rgba(0,0,0,0.7) inset",
+            transition:"all 0.3s"
+          }}/>
+        </div>
+        {countdown && (
+          <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+            <div style={{fontSize:120,color:T.accent,fontWeight:300,textShadow:"0 0 30px rgba(0,0,0,0.8)"}}>{countdown}</div>
+          </div>
+        )}
+        {!cameraReady && (
+          <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.85)"}}>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:32,color:T.accent,marginBottom:12}}>◉</div>
+              <div style={{fontSize:11,letterSpacing:3,color:"#fff"}}>STARTING CAMERA...</div>
+            </div>
+          </div>
+        )}
+      </div>
+      <div style={{position:"absolute",bottom:0,left:0,right:0,zIndex:10,background:"linear-gradient(to top,rgba(0,0,0,0.92) 40%,transparent)",padding:"40px 20px 26px"}}>
+        <div style={{textAlign:"center",marginBottom:20}}>
+          <div style={{fontSize:36,color:T.accent,marginBottom:6}}>{angle.icon}</div>
+          <div style={{fontSize:15,color:"#fff",letterSpacing:3,fontWeight:300,marginBottom:4}}>{angle.title}</div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,0.6)",letterSpacing:1,marginBottom:8}}>{angle.sub}</div>
+          <div style={{fontSize:11,color:T.accent,fontStyle:"italic",lineHeight:1.5,maxWidth:280,margin:"0 auto"}}>{angle.instruction}</div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:30}}>
+          <button style={{background:"transparent",border:`1px solid rgba(255,255,255,0.25)`,color:"#fff",width:46,height:46,borderRadius:"50%",cursor: angleIdx>0 ? "pointer":"default",fontSize:14,opacity: angleIdx>0 ? 1:0.3}} onClick={() => angleIdx>0 && setAngleIdx(i=>i-1)} disabled={angleIdx===0}>←</button>
+          <button style={{
+            width:78, height:78, borderRadius:"50%",
+            background: capturing ? T.accent : "transparent",
+            border: `4px solid ${capturing ? T.accent : "#fff"}`,
+            cursor: cameraReady && !capturing ? "pointer" : "default",
+            transition:"all 0.3s",
+            position:"relative",
+            opacity: cameraReady ? 1 : 0.4
+          }} onClick={handleCapture} disabled={!cameraReady || capturing}>
+            <div style={{position:"absolute",inset:6,borderRadius:"50%",background: capturing ? T.accent : "#fff", transition:"all 0.3s"}}/>
+          </button>
+          <button style={{background:"transparent",border:`1px solid rgba(255,255,255,0.25)`,color:"#fff",width:46,height:46,borderRadius:"50%",cursor:"pointer",fontSize:14}} onClick={() => { if (angleIdx < SCAN_ANGLES.length-1) setAngleIdx(i=>i+1); }}>→</button>
+        </div>
+        <div style={{textAlign:"center",marginTop:16,fontSize:9,color:"rgba(255,255,255,0.45)",letterSpacing:2}}>
+          {captured ? "✓ CAPTURED · TAP → FOR NEXT ANGLE" : "TAP CIRCLE TO CAPTURE"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── SHELL ───────────────────────────────────────────────────
+function Shell({T, manual, setManual, occ, profile, tab, setTab, notif, children}) {
+  const NAV = [{id:"home",icon:"⌂",label:"Home"},{id:"scan",icon:"◈",label:"Scan"},{id:"looks",icon:"♡",label:"Saved"},{id:"profile",icon:"◉",label:"Profile"}];
+  return (
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",background:T.bg,fontFamily:FF,maxWidth:480,margin:"0 auto",position:"relative",transition:"background 0.7s"}}>
+      <div style={{position:"fixed",inset:0,background:T.heroGlow,pointerEvents:"none",zIndex:0,transition:"background 0.7s"}}/>
+      {notif && <div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:T.btn,color:T.btnText,padding:"12px 28px",fontSize:11,letterSpacing:3,fontWeight:700,zIndex:1000,whiteSpace:"nowrap",boxShadow:T.shadow}}>{notif}</div>}
+      <div style={{position:"sticky",top:0,zIndex:10,background:T.bg,backdropFilter:"blur(20px)",padding:"17px 22px 13px",borderBottom:`1px solid ${T.border}`,transition:"background 0.7s",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div>
+          <div style={{fontSize:15,letterSpacing:7,color:T.accent,fontWeight:300}}>LUMIÈRE</div>
+          <div style={{fontSize:9,color:T.textMuted,letterSpacing:2,marginTop:1}}>Welcome, {profile.name||"Beauty"}</div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          {occ && <div style={{background:T.accentDim,border:`1px solid ${T.accentBorder}`,padding:"4px 10px",fontSize:7,letterSpacing:3,color:T.accent}}>{T.emoji} {T.name.split(" ")[0].toUpperCase()}</div>}
+          {!occ && <button style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMuted,padding:"6px 11px",fontSize:9,cursor:"pointer"}} onClick={()=>setManual(m=>m==="dark"?"light":"dark")}>{manual==="dark"?"☀️ Day":"🌙 Night"}</button>}
+        </div>
+      </div>
+      <div style={{flex:1,overflowY:"auto",paddingBottom:80,position:"relative",zIndex:1}}>{children}</div>
+      <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:T.bg,backdropFilter:"blur(20px)",borderTop:`1px solid ${T.border}`,display:"flex",zIndex:10,transition:"background 0.7s"}}>
+        {NAV.map(n=>(
+          <button key={n.id} style={{flex:1,background:"transparent",border:"none",color:tab===n.id?T.accent:T.textMuted,padding:"12px 0 16px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4,transition:"color 0.2s"}} onClick={()=>setTab(n.id)}>
+            <span style={{fontSize:18}}>{n.icon}</span>
+            <span style={{fontSize:9,letterSpacing:2}}>{n.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── SPLASH ──────────────────────────────────────────────────
+function Splash({T, go}) {
+  return (
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:T.bg,position:"relative",overflow:"hidden",fontFamily:FF}}>
+      <div style={{position:"absolute",inset:0,background:T.splashGlow,pointerEvents:"none"}}/>
+      <div style={{position:"absolute",top:"10%",left:"6%",width:1,height:"80%",background:`linear-gradient(to bottom,transparent,${T.accentBorder},transparent)`}}/>
+      <div style={{position:"absolute",top:"10%",right:"6%",width:1,height:"80%",background:`linear-gradient(to bottom,transparent,${T.accentBorder},transparent)`}}/>
+      <div style={{position:"relative",zIndex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"40px 32px",textAlign:"center",maxWidth:420}}>
+        <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:18}}>
+          <div style={{height:1,width:36,background:T.accentBorder}}/><span style={{fontSize:9,letterSpacing:6,color:T.accent}}>EST. 2026</span><div style={{height:1,width:36,background:T.accentBorder}}/>
+        </div>
+        <div style={{fontSize:52,fontWeight:300,color:T.text,letterSpacing:14,marginBottom:4,lineHeight:1}}>LUMIÈRE</div>
+        <div style={{fontSize:8,letterSpacing:8,color:T.accent,marginBottom:54}}>AI BEAUTY COMPANION</div>
+        <div style={{fontSize:26,fontWeight:300,color:T.text,lineHeight:1.5,marginBottom:20,letterSpacing:1}}>Your face.<br/>Your tutorial.<br/><span style={{color:T.accent}}>Your glow.</span></div>
+        <div style={{fontSize:13,color:T.textMuted,lineHeight:1.8,marginBottom:52,maxWidth:280}}>Personalized AI makeup tutorials generated on your own face — for every occasion, every mood.</div>
+        <button style={{background:T.btn,color:T.btnText,border:"none",padding:"18px 48px",fontSize:10,letterSpacing:5,fontWeight:700,cursor:"pointer",width:"100%",maxWidth:320,marginBottom:22,boxShadow:T.shadowGold}} onClick={go}>BEGIN YOUR JOURNEY</button>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{height:1,width:20,background:T.accentBorder}}/><span style={{fontSize:8,color:T.textMuted,letterSpacing:3}}>POWERED BY AI</span><div style={{height:1,width:20,background:T.accentBorder}}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── ONBOARD ─────────────────────────────────────────────────
+function Onboard({T, profile, setProfile, step, setStep, done}) {
+  const STEPS = [
+    {q:"What's your name?", f:"name", type:"text", ph:"Your first name"},
+    {q:"Your age range?", f:"age", opts:["18-24","25-32","33-40","41-50","50+"]},
+    {q:"Your skin type?", f:"skinType", opts:["Oily","Dry","Combination","Normal","Sensitive"]},
+    {q:"Your skin tone?", f:"skinTone", opts:["Fair","Light","Medium","Tan","Deep"]},
+  ];
+  const cur = STEPS[step]; const ok = profile[cur.f];
+  return (
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:T.bg,position:"relative",fontFamily:FF}}>
+      <div style={{position:"absolute",inset:0,background:T.splashGlow}}/>
+      <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:440,padding:"40px 30px"}}>
+        <div style={{marginBottom:44}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+            <span style={{fontSize:8,letterSpacing:4,color:T.accent}}>{step+1} OF {STEPS.length}</span>
+            <span style={{fontSize:8,letterSpacing:3,color:T.textMuted}}>PROFILE SETUP</span>
+          </div>
+          <div style={{height:1,background:T.border,position:"relative"}}>
+            <div style={{position:"absolute",top:0,left:0,height:"100%",width:`${((step+1)/STEPS.length)*100}%`,background:T.accent,transition:"width 0.5s"}}/>
+          </div>
+        </div>
+        <div style={{fontSize:10,letterSpacing:6,color:T.accent,marginBottom:26}}>◆ LUMIÈRE</div>
+        <div style={{fontSize:28,fontWeight:300,color:T.text,lineHeight:1.3,marginBottom:34}}>{cur.q}</div>
+        {cur.type==="text"
+          ? <input style={{width:"100%",background:"transparent",border:"none",borderBottom:`1px solid ${T.borderHi}`,color:T.text,fontSize:26,padding:"12px 0",outline:"none",fontFamily:FF,boxSizing:"border-box",caretColor:T.accent}} placeholder={cur.ph} value={profile[cur.f]||""} onChange={e=>setProfile(p=>({...p,[cur.f]:e.target.value}))}/>
+          : <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
+            {cur.opts.map(o=>(
+              <button key={o} style={{background:profile[cur.f]===o?T.accentDim:"transparent",border:`1px solid ${profile[cur.f]===o?T.accent:T.border}`,color:profile[cur.f]===o?T.accent:T.textSub,padding:"12px 20px",fontSize:13,cursor:"pointer",letterSpacing:1,transition:"all 0.2s",fontFamily:FF}} onClick={()=>setProfile(p=>({...p,[cur.f]:o}))}>{o}</button>
+            ))}
+          </div>}
+        <button style={{marginTop:50,background:ok?T.btn:"transparent",color:ok?T.btnText:T.textMuted,border:ok?"none":`1px solid ${T.border}`,padding:"16px 32px",fontSize:10,letterSpacing:5,fontWeight:700,cursor:ok?"pointer":"default",width:"100%",fontFamily:FF,transition:"all 0.3s"}} onClick={()=>ok&&(step<STEPS.length-1?setStep(s=>s+1):done())}>
+          {step<STEPS.length-1?"CONTINUE →":"START MY JOURNEY ◆"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── HOME ────────────────────────────────────────────────────
+function Home({T, profile, preview, looks, setTab}) {
+  const tips = ["Update your face scan after weight changes for better accuracy ◆","Evening events activate Midnight Atelier — celestial gold on midnight blue 🌙","Day occasions reveal Pearl Morning — warm ivory and espresso ☀️","Save your looks to recreate them before every big occasion 💄"];
+  return (
+    <div style={{padding:"24px 20px"}}>
+      <div style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:20,marginBottom:20,display:"flex",gap:16,alignItems:"center",boxShadow:T.shadow}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:8,letterSpacing:4,color:T.accent,marginBottom:8}}>YOUR BEAUTY COMPANION</div>
+          <div style={{fontSize:21,fontWeight:300,color:T.text,lineHeight:1.45,marginBottom:12}}>Every occasion.<br/>Your face.<br/><span style={{color:T.accent}}>Perfected.</span></div>
+          <button style={{background:T.btn,color:T.btnText,border:"none",padding:"11px 18px",fontSize:9,letterSpacing:4,fontWeight:700,cursor:"pointer"}} onClick={()=>setTab("scan")}>GET MY LOOK ◆</button>
+        </div>
+        <div style={{width:88,flexShrink:0}}>
+          {preview ? <img src={preview} style={{width:88,height:108,objectFit:"cover",border:`1px solid ${T.border}`}} alt="You"/>
+          : <div style={{width:88,height:108,border:`1px dashed ${T.border}`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:5,background:T.accentDim}}>
+            <div style={{fontSize:26,color:T.accent,opacity:0.35}}>◉</div>
+            <div style={{fontSize:6,color:T.textMuted,letterSpacing:1,textAlign:"center"}}>SCAN YOUR<br/>FACE</div>
+          </div>}
+        </div>
+      </div>
+      <div style={{background:T.accentDim,border:`1px solid ${T.accentBorder}`,padding:"13px 15px",marginBottom:20,display:"flex",gap:12,alignItems:"flex-start"}}>
+        <div style={{fontSize:16,flexShrink:0}}>🎨</div>
+        <div>
+          <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:3}}>ADAPTIVE THEME SYSTEM</div>
+          <div style={{fontSize:11,color:T.textSub,lineHeight:1.65}}>Evening events activate <strong style={{color:T.accent}}>Midnight Atelier</strong> — deep midnight blue & gold. Day occasions reveal <strong style={{color:T.accent}}>Pearl Morning</strong> — warm ivory & espresso.</div>
+        </div>
+      </div>
+      <div style={{fontSize:8,letterSpacing:4,color:T.accent,marginBottom:9}}>☀️ DAY OCCASIONS → PEARL MORNING</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:18}}>
+        {OCCS.filter(o=>o.t==="light").map(o=>(
+          <button key={o.id} style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:"12px 10px",cursor:"pointer",display:"flex",alignItems:"center",gap:9}} onClick={()=>setTab("scan")}>
+            <span style={{fontSize:18}}>{o.icon}</span>
+            <div style={{textAlign:"left"}}>
+              <div style={{fontSize:10,color:T.text,letterSpacing:1}}>{o.label}</div>
+              <div style={{fontSize:7,color:T.textMuted,marginTop:2}}>Pearl Morning</div>
+            </div>
+          </button>
+        ))}
+      </div>
+      <div style={{fontSize:8,letterSpacing:4,color:T.accent,marginBottom:9}}>🌙 NIGHT OCCASIONS → MIDNIGHT ATELIER</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:20}}>
+        {OCCS.filter(o=>o.t==="dark").map(o=>(
+          <button key={o.id} style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:"12px 10px",cursor:"pointer",display:"flex",alignItems:"center",gap:9}} onClick={()=>setTab("scan")}>
+            <span style={{fontSize:18}}>{o.icon}</span>
+            <div style={{textAlign:"left"}}>
+              <div style={{fontSize:10,color:T.text,letterSpacing:1}}>{o.label}</div>
+              <div style={{fontSize:7,color:T.textMuted,marginTop:2}}>Midnight Atelier</div>
+            </div>
+          </button>
+        ))}
+      </div>
+      <div style={{fontSize:8,letterSpacing:4,color:T.accent,marginBottom:9}}>TODAY'S TIP</div>
+      <div style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:"14px 16px",display:"flex",gap:11,marginBottom:20}}>
+        <div style={{fontSize:12,color:T.accent,marginTop:2}}>◆</div>
+        <div style={{fontSize:13,color:T.text,lineHeight:1.7,fontStyle:"italic"}}>{tips[new Date().getDay()%tips.length]}</div>
+      </div>
+      {looks.length>0 && <>
+        <div style={{fontSize:8,letterSpacing:4,color:T.accent,marginBottom:9}}>RECENT LOOKS</div>
+        {looks.slice(0,2).map(l=>(
+          <div key={l.id} style={{display:"flex",gap:12,background:T.bgCard,border:`1px solid ${T.border}`,padding:12,marginBottom:8,alignItems:"center"}}>
+            {l.preview && <img src={l.preview} style={{width:52,height:64,objectFit:"cover"}} alt={l.lookName}/>}
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,color:T.text,marginBottom:3}}>{l.lookName}</div>
+              <div style={{fontSize:9,color:T.accent,letterSpacing:1,marginBottom:2}}>{l.occasion}</div>
+              <div style={{fontSize:8,color:T.textMuted}}>{l.date} · {l.glam} glam</div>
+            </div>
+            <div style={{fontSize:14}}>{l.dk==="dark"?"🌙":"☀️"}</div>
+          </div>
+        ))}
+      </>}
+    </div>
+  );
+}
+
+// ─── SCAN TAB ────────────────────────────────────────────────
+function Scan({T, scans, hasFullScan, primaryFace, startCamera, resetScan, glam, setGlam, occ, setOcc, analyze, loading}) {
+  const ok = hasFullScan && occ && !loading;
+  return (
+    <div style={{padding:"24px 20px"}}>
+      <div style={{fontSize:17,fontWeight:300,color:T.text,letterSpacing:3,marginBottom:3}}>CREATE YOUR LOOK</div>
+      <div style={{fontSize:10,color:T.textMuted,marginBottom:14,letterSpacing:1}}>Scan · Occasion · Glam · Generate</div>
+      {occ && <div style={{background:T.accentDim,border:`1px solid ${T.accentBorder}`,padding:"9px 13px",marginBottom:14,display:"flex",alignItems:"center",gap:9}}>
+        <span style={{fontSize:14}}>{T.emoji}</span>
+        <div>
+          <div style={{fontSize:8,letterSpacing:3,color:T.accent}}>{T.name.toUpperCase()} ACTIVE</div>
+          <div style={{fontSize:9,color:T.textMuted}}>Theme matched to {OCCS.find(o=>o.id===occ)?.label}</div>
+        </div>
+      </div>}
+      <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:8}}>STEP 1 — YOUR FACE SCAN</div>
+      {!hasFullScan ? (
+        <button onClick={startCamera} style={{width:"100%", background:T.bgCard, border:`1px dashed ${T.borderHi}`, padding:"24px 16px", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:10, fontFamily:FF, transition:"all 0.2s"}}>
+          <div style={{fontSize:36,color:T.accent,opacity:0.7}}>📷</div>
+          <div style={{fontSize:11,letterSpacing:3,color:T.text}}>START 5-ANGLE FACE SCAN</div>
+          <div style={{fontSize:9,color:T.textMuted,letterSpacing:1,textAlign:"center",lineHeight:1.5,maxWidth:240}}>Front · Left · Right · Up · Down<br/>Full 360° AI analysis for perfect makeup</div>
+          {Object.keys(scans).length > 0 && (
+            <div style={{fontSize:8,color:T.accent,letterSpacing:2,marginTop:4}}>{Object.keys(scans).length} OF 5 CAPTURED · TAP TO CONTINUE</div>
+          )}
+        </button>
+      ) : (
+        <div style={{background:T.bgCard,border:`1px solid ${T.accentBorder}`,padding:14}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+            <div style={{fontSize:14,color:T.accent}}>✓</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:10,letterSpacing:2,color:T.accent}}>FACE SCAN COMPLETE</div>
+              <div style={{fontSize:9,color:T.textMuted,marginTop:2}}>5 angles · Full 360° analysis ready</div>
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:5,marginBottom:12}}>
+            {SCAN_ANGLES.map(a => (
+              <div key={a.id} style={{position:"relative",aspectRatio:"1",overflow:"hidden",border:`1px solid ${T.border}`}}>
+                <img src={scans[a.id]} alt={a.id} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                <div style={{position:"absolute",bottom:0,left:0,right:0,background:"rgba(0,0,0,0.6)",padding:"3px",textAlign:"center"}}>
+                  <span style={{fontSize:7,color:"#fff",letterSpacing:1}}>{a.id.toUpperCase()}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={startCamera} style={{flex:1,background:"transparent",border:`1px solid ${T.border}`,color:T.text,padding:"9px",fontSize:8,letterSpacing:3,cursor:"pointer",fontFamily:FF}}>↻ RESCAN</button>
+            <button onClick={resetScan} style={{flex:1,background:"transparent",border:`1px solid ${T.border}`,color:T.textMuted,padding:"9px",fontSize:8,letterSpacing:3,cursor:"pointer",fontFamily:FF}}>✕ CLEAR</button>
+          </div>
+        </div>
+      )}
+      <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:8,marginTop:20}}>STEP 2 — YOUR OCCASION</div>
+      <div style={{fontSize:7,letterSpacing:3,color:T.textMuted,marginBottom:7}}>☀️ DAY — Pearl Morning</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:10}}>
+        {OCCS.filter(o=>o.t==="light").map(o=>(
+          <button key={o.id} style={{background:occ===o.id?T.accentDim:T.bgCard,border:`1px solid ${occ===o.id?T.accent:T.border}`,padding:"10px 9px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,transition:"all 0.2s"}} onClick={()=>setOcc(o.id)}>
+            <span style={{fontSize:17}}>{o.icon}</span>
+            <div style={{fontSize:9,color:occ===o.id?T.accent:T.text,letterSpacing:1}}>{o.label}</div>
+          </button>
+        ))}
+      </div>
+      <div style={{fontSize:7,letterSpacing:3,color:T.textMuted,marginBottom:7}}>🌙 NIGHT — Midnight Atelier</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:4}}>
+        {OCCS.filter(o=>o.t==="dark").map(o=>(
+          <button key={o.id} style={{background:occ===o.id?T.accentDim:T.bgCard,border:`1px solid ${occ===o.id?T.accent:T.border}`,padding:"10px 9px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,transition:"all 0.2s"}} onClick={()=>setOcc(o.id)}>
+            <span style={{fontSize:17}}>{o.icon}</span>
+            <div style={{fontSize:9,color:occ===o.id?T.accent:T.text,letterSpacing:1}}>{o.label}</div>
+          </button>
+        ))}
+      </div>
+      <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:8,marginTop:20}}>STEP 3 — GLAM INTENSITY</div>
+      <div style={{display:"flex",gap:7,marginBottom:4}}>
+        {GLAM.map(g=>(
+          <button key={g.id} style={{flex:1,background:glam===g.id?T.accentDim:T.bgCard,border:`1px solid ${glam===g.id?T.accent:T.border}`,padding:"13px 5px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:7,transition:"all 0.2s"}} onClick={()=>setGlam(g.id)}>
+            <div style={{display:"flex",gap:3}}>
+              {[0,1,2].map(i=><div key={i} style={{width:5,height:5,borderRadius:"50%",background:i<g.dot?T.accent:T.border,transition:"background 0.2s"}}/>)}
+            </div>
+            <div style={{fontSize:8,letterSpacing:2,color:glam===g.id?T.accent:T.text}}>{g.label}</div>
+            <div style={{fontSize:7,color:T.textMuted,letterSpacing:1,textAlign:"center"}}>{g.sub}</div>
+          </button>
+        ))}
+      </div>
+      <button style={{width:"100%",background:ok?T.btn:"transparent",color:ok?T.btnText:T.textMuted,border:ok?"none":`1px solid ${T.border}`,padding:"17px",fontSize:10,letterSpacing:5,fontWeight:700,cursor:ok?"pointer":"default",marginTop:22,display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"all 0.3s",boxShadow:ok?T.shadowGold:"none"}} onClick={ok?analyze:undefined} disabled={!ok}>
+        {loading?"◆ ANALYZING ALL 5 ANGLES...":"◆ GENERATE MY TUTORIAL"}
+      </button>
+      {(!hasFullScan || !occ) && <div style={{textAlign:"center",fontSize:8,color:T.textMuted,marginTop:8,letterSpacing:2}}>{!hasFullScan?"Complete face scan to continue":"Select an occasion to continue"}</div>}
+    </div>
+  );
+}
+
+// ─── RESULTS ─────────────────────────────────────────────────
+function Results({T, result, preview, occ, glam, onSave, onBack, onNew}) {
+  const [step, setStep] = useState(0);
+  if (!result) return null;
+  const steps = Object.values(result.tutorial);
+  return (
+    <div style={{minHeight:"100vh",background:T.bg,fontFamily:FF,transition:"background 0.7s"}}>
+      <div style={{position:"fixed",inset:0,background:T.heroGlow,pointerEvents:"none"}}/>
+      <div style={{position:"sticky",top:0,zIndex:10,background:T.bg,backdropFilter:"blur(20px)",padding:"16px 20px 12px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",transition:"background 0.7s"}}>
+        <button style={{background:"transparent",border:"none",color:T.textMuted,fontSize:10,letterSpacing:2,cursor:"pointer"}} onClick={onBack}>← BACK</button>
+        <div style={{fontSize:11,letterSpacing:5,color:T.accent}}>◆ YOUR LOOK</div>
+        <button style={{background:"transparent",border:"none",color:T.accent,fontSize:10,letterSpacing:2,cursor:"pointer"}} onClick={onSave}>SAVE ♡</button>
+      </div>
+      <div style={{padding:"18px 20px 40px",position:"relative",zIndex:1}}>
+        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+          <div style={{background:T.accentDim,border:`1px solid ${T.accentBorder}`,padding:"4px 11px",fontSize:7,letterSpacing:3,color:T.accent}}>{T.emoji} {T.name.toUpperCase()}</div>
+        </div>
+        <div style={{display:"flex",gap:14,marginBottom:18}}>
+          {preview && <img src={preview} style={{width:86,height:105,objectFit:"cover",border:`1px solid ${T.border}`,flexShrink:0}} alt="Face"/>}
+          <div style={{flex:1,display:"flex",flexDirection:"column",justifyContent:"center",gap:7}}>
+            <div style={{fontSize:17,color:T.text,fontWeight:300,lineHeight:1.3}}>{result.lookName}</div>
+            <div style={{fontSize:11,color:T.accent,letterSpacing:2}}>{occ?.icon} {occ?.label}</div>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+              {[result.faceShape,result.skinTone,`${glam} glam`,result.time,result.level].filter(Boolean).map((v,i)=>(
+                <span key={i} style={{fontSize:7,color:T.textMuted,border:`1px solid ${T.border}`,padding:"2px 7px",letterSpacing:1,textTransform:"capitalize"}}>{v}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:15,marginBottom:17}}>
+          <div style={{fontSize:8,letterSpacing:4,color:T.accent,marginBottom:12}}>◆ FACE ANALYSIS</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:11,marginBottom:11}}>
+            {[["Face Shape",result.faceShape],["Skin Tone",result.skinTone],["Undertone",result.undertone],["Eye Shape",result.eyeShape],["Jawline",result.jawline],["Cheekbones",result.cheekbones]].filter(([,v])=>v).map(([l,v])=>(
+              <div key={l}><div style={{fontSize:7,color:T.textMuted,letterSpacing:2,marginBottom:2}}>{l}</div><div style={{fontSize:13,color:T.text,textTransform:"capitalize"}}>{v}</div></div>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+            {result.features?.map((f,i)=><div key={i} style={{fontSize:7,color:T.accent,border:`1px solid ${T.accentBorder}`,padding:"3px 9px",letterSpacing:1}}>{f}</div>)}
+          </div>
+        </div>
+        <div style={{fontSize:8,letterSpacing:4,color:T.accent,marginBottom:10}}>STEP-BY-STEP TUTORIAL</div>
+        <div style={{display:"flex",gap:5,marginBottom:11,flexWrap:"wrap"}}>
+          {steps.map((_,i)=><button key={i} style={{width:30,height:30,background:step===i?T.accentDim:T.bgCard,border:`1px solid ${step===i?T.accent:T.border}`,color:step===i?T.accent:T.textMuted,fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s"}} onClick={()=>setStep(i)}>{i+1}</button>)}
+        </div>
+        <div style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:17,marginBottom:17}}>
+          <div style={{fontSize:7,letterSpacing:3,color:T.accent,marginBottom:6}}>STEP {step+1} OF {steps.length}</div>
+          <div style={{fontSize:15,color:T.text,marginBottom:10}}>{steps[step].title}</div>
+          <div style={{fontSize:13,color:T.textSub,lineHeight:1.8}}>{steps[step].instruction}</div>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:15}}>
+            <button style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMuted,padding:"7px 13px",fontSize:8,letterSpacing:2,cursor:"pointer"}} onClick={()=>setStep(p=>Math.max(0,p-1))} disabled={step===0}>← PREV</button>
+            <button style={{background:"transparent",border:`1px solid ${T.border}`,color:T.textMuted,padding:"7px 13px",fontSize:8,letterSpacing:2,cursor:"pointer"}} onClick={()=>setStep(p=>Math.min(steps.length-1,p+1))} disabled={step===steps.length-1}>NEXT →</button>
+          </div>
+        </div>
+        <div style={{fontSize:8,letterSpacing:4,color:T.accent,marginBottom:10}}>RECOMMENDED PRODUCTS</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9,marginBottom:17}}>
+          {result.products?.map((p,i)=>(
+            <div key={i} style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:13}}>
+              <div style={{fontSize:8,color:T.accent,marginBottom:5}}>◆</div>
+              <div style={{fontSize:11,color:T.text,marginBottom:3}}>{p.name}</div>
+              <div style={{fontSize:9,color:T.accent,marginBottom:4}}>{p.shade}</div>
+              <div style={{fontSize:8,color:T.textMuted,lineHeight:1.5}}>{p.why}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{background:T.accentDim,border:`1px solid ${T.accentBorder}`,padding:"15px 17px",marginBottom:22}}>
+          <div style={{fontSize:15,color:T.accent,marginBottom:5}}>★</div>
+          <div style={{fontSize:8,letterSpacing:4,color:T.accent,marginBottom:7}}>PRO TIP FOR YOUR FACE</div>
+          <div style={{fontSize:13,color:T.text,lineHeight:1.75,fontStyle:"italic"}}>{result.proTip}</div>
+        </div>
+        <div style={{display:"flex",gap:9}}>
+          <button style={{flex:1,background:T.btn,color:T.btnText,border:"none",padding:"15px",fontSize:8,letterSpacing:3,fontWeight:700,cursor:"pointer",boxShadow:T.shadowGold}} onClick={onSave}>♡ SAVE THIS LOOK</button>
+          <button style={{flex:1,background:"transparent",border:`1px solid ${T.border}`,color:T.textMuted,padding:"15px",fontSize:8,letterSpacing:3,cursor:"pointer"}} onClick={onNew}>◆ NEW LOOK</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Looks({T, looks}) {
+  if (!looks.length) return (
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:300,gap:11,padding:20}}>
+      <div style={{fontSize:46,color:T.accent,opacity:0.22}}>♡</div>
+      <div style={{fontSize:15,color:T.text,fontWeight:300}}>No saved looks yet</div>
+      <div style={{fontSize:11,color:T.textMuted,textAlign:"center"}}>Generate your first look and save it here</div>
+    </div>
+  );
+  return (
+    <div style={{padding:"24px 20px"}}>
+      <div style={{fontSize:17,fontWeight:300,color:T.text,letterSpacing:3,marginBottom:3}}>SAVED LOOKS</div>
+      <div style={{fontSize:10,color:T.textMuted,marginBottom:18}}>Your personal beauty archive</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:11}}>
+        {looks.map(l=>(
+          <div key={l.id} style={{position:"relative",overflow:"hidden",aspectRatio:"3/4",background:T.bgCard,border:`1px solid ${T.border}`}}>
+            {l.preview && <img src={l.preview} style={{width:"100%",height:"100%",objectFit:"cover"}} alt={l.lookName}/>}
+            <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,0.88) 0%,transparent 55%)",display:"flex",flexDirection:"column",justifyContent:"flex-end",padding:11}}>
+              <div style={{fontSize:10,marginBottom:3}}>{l.dk==="dark"?"🌙":"☀️"}</div>
+              <div style={{fontSize:11,color:"#fff",marginBottom:2}}>{l.lookName}</div>
+              <div style={{fontSize:8,color:"rgba(255,255,255,0.55)",letterSpacing:1,marginBottom:1}}>{l.occasion}</div>
+              <div style={{fontSize:7,color:"rgba(255,255,255,0.38)"}}>{l.glam} glam · {l.date}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Profile({T, profile, preview, hasFullScan, startCamera}) {
+  return (
+    <div style={{padding:"24px 20px"}}>
+      <div style={{fontSize:17,fontWeight:300,color:T.text,letterSpacing:3,marginBottom:18}}>MY PROFILE</div>
+      <div style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:"26px 20px",marginBottom:18,display:"flex",flexDirection:"column",alignItems:"center"}}>
+        <div style={{position:"relative",marginBottom:13}}>
+          {preview ? <img src={preview} style={{width:92,height:112,objectFit:"cover",border:`2px solid ${T.border}`}} alt="Your face"/>
+          : <div style={{width:92,height:112,border:`2px dashed ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",color:T.accent,opacity:0.32,background:T.accentDim,fontSize:34}}>◉</div>}
+          <div style={{position:"absolute",bottom:-7,right:-7,background:T.btn,color:T.btnText,width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9}}>◆</div>
+        </div>
+        <div style={{fontSize:21,fontWeight:300,color:T.text,letterSpacing:4,marginBottom:3}}>{profile.name||"Beauty"}</div>
+        <div style={{fontSize:7,color:T.accent,letterSpacing:5,marginBottom:16}}>LUMIÈRE MEMBER</div>
+        <div style={{display:"flex",gap:10}}>
+          <div style={{textAlign:"center",padding:"7px 13px",background:DARK.bgCard,border:`1px solid ${DARK.accentBorder}`}}>
+            <div style={{fontSize:10,marginBottom:2}}>🌙</div>
+            <div style={{fontSize:6,letterSpacing:2,color:DARK.accent}}>MIDNIGHT</div>
+            <div style={{fontSize:6,color:DARK.textMuted}}>Evening</div>
+          </div>
+          <div style={{textAlign:"center",padding:"7px 13px",background:LIGHT.bgCard,border:`1px solid ${LIGHT.accentBorder}`}}>
+            <div style={{fontSize:10,marginBottom:2}}>☀️</div>
+            <div style={{fontSize:6,letterSpacing:2,color:LIGHT.accent}}>PEARL</div>
+            <div style={{fontSize:6,color:LIGHT.textMuted}}>Daytime</div>
+          </div>
+        </div>
+      </div>
+      <div style={{background:T.bgCard,border:`1px solid ${T.border}`,marginBottom:18}}>
+        {[["Age Range",profile.age],["Skin Type",profile.skinType],["Skin Tone",profile.skinTone],["Face Scan",hasFullScan?"5 angles · Complete":"Not yet scanned"]].map(([l,v],i,arr)=>(
+          <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"13px 15px",borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+            <div style={{fontSize:8,color:T.textMuted,letterSpacing:2}}>{l}</div>
+            <div style={{fontSize:12,color:T.text,textTransform:"capitalize"}}>{v||"Not set"}</div>
+          </div>
+        ))}
+      </div>
+      <button style={{width:"100%",background:hasFullScan?"transparent":T.btn,color:hasFullScan?T.text:T.btnText,border:hasFullScan?`1px solid ${T.borderHi}`:"none",padding:"14px",fontSize:9,letterSpacing:4,cursor:"pointer",marginBottom:7,fontFamily:FF,fontWeight:hasFullScan?400:700}} onClick={startCamera}>
+        {hasFullScan ? "◈ UPDATE FACE SCAN" : "📷 START FACE SCAN"}
+      </button>
+      <div style={{fontSize:8,color:T.textMuted,textAlign:"center",letterSpacing:1,marginBottom:18,lineHeight:1.7}}>Update after weight changes or seasonally for best results</div>
+      <div style={{display:"flex",gap:11,alignItems:"flex-start",background:T.accentDim,border:`1px solid ${T.accentBorder}`,padding:13}}>
+        <div style={{fontSize:13,flexShrink:0}}>🔒</div>
+        <div style={{fontSize:10,color:T.textMuted,lineHeight:1.6}}>Your face scan is stored securely on your device and never shared without your explicit consent.</div>
+      </div>
+    </div>
+  );
+}
