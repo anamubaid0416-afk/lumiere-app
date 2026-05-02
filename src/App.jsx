@@ -50,9 +50,6 @@ const SCAN_ANGLES = [
   { id:"up",         title:"TILT YOUR CHIN UP",     sub:"Show your jawline & neck",              icon:"↑", instruction:"Lift your chin slightly to reveal your jawline." },
   { id:"down",       title:"TILT YOUR CHIN DOWN",   sub:"Show your forehead & brow",             icon:"↓", instruction:"Lower your chin slightly to show your forehead." },
 ];
-
-// ─── ANIMATION OVERLAYS PER STEP ─────────────────────────────
-// Each step has a specific visual effect on the face
 const STEP_OVERLAYS = {
   step1: { name:"Skin Prep",    color:"rgba(255,240,230,0.25)", zone:"all",        duration:5000 },
   step2: { name:"Foundation",   color:"rgba(220,180,150,0.30)", zone:"all",        duration:6000 },
@@ -66,18 +63,34 @@ const STEP_OVERLAYS = {
 
 const FF = "'Palatino Linotype','Book Antiqua',Palatino,serif";
 
+// ─── LOCALSTORAGE HELPERS ────────────────────────────────────
+const STORAGE = {
+  load(key, fallback) {
+    try {
+      const v = localStorage.getItem('lumiere_' + key);
+      return v ? JSON.parse(v) : fallback;
+    } catch { return fallback; }
+  },
+  save(key, value) {
+    try { localStorage.setItem('lumiere_' + key, JSON.stringify(value)); }
+    catch {}
+  }
+};
+
 // ─── ROOT ────────────────────────────────────────────────────
 export default function Lumiere() {
   const [screen, setScreen] = useState("splash");
-  const [profile, setProfile] = useState({name:"",age:"",skinType:"",skinTone:""});
+  const [profile, setProfile] = useState(() => STORAGE.load('profile', {name:"",age:"",skinType:"",skinTone:""}));
   const [pStep, setPStep] = useState(0);
   const [scans, setScans] = useState({});
   const [glam, setGlam] = useState("medium");
   const [occ, setOcc] = useState(null);
-  const [result, setResult] = useState(null);
+  const [result, setResult] = useState(() => STORAGE.load('lastResult', null));
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState("home");
-  const [looks, setLooks] = useState([]);
+  const [looks, setLooks] = useState(() => STORAGE.load('looks', []));
+  const [events, setEvents] = useState(() => STORAGE.load('events', []));
+  const [chatMessages, setChatMessages] = useState(() => STORAGE.load('chatMessages', []));
   const [notif, setNotif] = useState(null);
   const [manual, setManual] = useState("dark");
 
@@ -85,6 +98,20 @@ export default function Lumiere() {
   const notify = m => { setNotif(m); setTimeout(()=>setNotif(null),3500); };
   const hasFullScan = SCAN_ANGLES.every(a => scans[a.id]);
   const primaryFace = scans.front || Object.values(scans)[0] || null;
+
+  // Persist data on change
+  useEffect(() => STORAGE.save('profile', profile), [profile]);
+  useEffect(() => STORAGE.save('looks', looks), [looks]);
+  useEffect(() => STORAGE.save('events', events), [events]);
+  useEffect(() => STORAGE.save('chatMessages', chatMessages), [chatMessages]);
+  useEffect(() => { if (result) STORAGE.save('lastResult', result); }, [result]);
+
+  // Skip splash if user already onboarded
+  useEffect(() => {
+    if (profile.name && screen === "splash") {
+      setScreen("main");
+    }
+  }, []);
 
   const analyze = useCallback(async () => {
     if (!hasFullScan || !occ) return;
@@ -115,6 +142,14 @@ export default function Lumiere() {
 
   const resetScan = () => setScans({});
 
+  // Event management
+  const addEvent = (event) => {
+    const newEvent = { ...event, id: 'evt_' + Date.now() };
+    setEvents(p => [...p, newEvent].sort((a,b)=>new Date(a.date)-new Date(b.date)));
+    return newEvent;
+  };
+  const removeEvent = (id) => setEvents(p => p.filter(e => e.id !== id));
+
   if (screen==="splash") return <Splash T={DARK} go={()=>setScreen("onboard")}/>;
   if (screen==="onboard") return <Onboard T={DARK} profile={profile} setProfile={setProfile} step={pStep} setStep={setPStep} done={()=>setScreen("main")}/>;
   if (screen==="camera") return <CameraScan T={T} scans={scans} setScans={setScans} onDone={()=>setScreen("main")} onCancel={()=>setScreen("main")} notify={notify}/>;
@@ -123,20 +158,312 @@ export default function Lumiere() {
 
   return (
     <Shell T={T} manual={manual} setManual={setManual} occ={occ} profile={profile} tab={tab} setTab={setTab} notif={notif}>
-      {tab==="home" && <Home T={T} profile={profile} preview={primaryFace} looks={looks} setTab={setTab}/>}
+      {tab==="home" && <Home T={T} profile={profile} preview={primaryFace} looks={looks} events={events} setTab={setTab}/>}
       {tab==="scan" && <Scan T={T} scans={scans} hasFullScan={hasFullScan} primaryFace={primaryFace} startCamera={()=>setScreen("camera")} resetScan={resetScan} glam={glam} setGlam={setGlam} occ={occ} setOcc={setOcc} analyze={analyze} loading={loading}/>}
       {tab==="looks" && <Looks T={T} looks={looks}/>}
+      {tab==="lumi" && <LumiChat T={T} profile={profile} faceAnalysis={result} events={events} addEvent={addEvent} removeEvent={removeEvent} chatMessages={chatMessages} setChatMessages={setChatMessages} notify={notify} setTab={setTab}/>}
       {tab==="profile" && <Profile T={T} profile={profile} preview={primaryFace} hasFullScan={hasFullScan} startCamera={()=>setScreen("camera")}/>}
     </Shell>
   );
 }
 
-// ─── 🎬 NEW: TUTORIAL PLAYER WITH FACE ANIMATIONS + VOICE ────
+// ─── 💬 NEW: LUMI CHAT — AGENTIC BEAUTY ADVISOR ──────────────
+function LumiChat({ T, profile, faceAnalysis, events, addEvent, removeEvent, chatMessages, setChatMessages, notify, setTab }) {
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [showEvents, setShowEvents] = useState(false);
+  const messagesEndRef = useRef();
+  const inputRef = useRef();
+
+  // Auto-scroll to bottom on new messages
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages, sending]);
+
+  // Initial greeting if first time
+  useEffect(() => {
+    if (chatMessages.length === 0) {
+      const greeting = profile.name
+        ? `Hello ${profile.name}! ✨ I'm Lumi, your personal beauty advisor. I can help you plan looks for any occasion, manage your beauty calendar, and give you personalized advice. What's on your mind today?`
+        : `Hello darling! ✨ I'm Lumi, your personal beauty advisor. I can help you plan looks, manage your upcoming events, and give personalized advice. What's coming up for you?`;
+      setChatMessages([{ role: 'assistant', content: greeting, timestamp: Date.now() }]);
+    }
+  }, []);
+
+  const sendMessage = async (text) => {
+    if (!text.trim() || sending) return;
+    const userMsg = { role: 'user', content: text.trim(), timestamp: Date.now() };
+    const updatedMessages = [...chatMessages, userMsg];
+    setChatMessages(updatedMessages);
+    setInput("");
+    setSending(true);
+
+    try {
+      // Convert chat history to API format (only role + content)
+      const apiMessages = updatedMessages.map(m => ({
+        role: m.role,
+        content: typeof m.content === 'string' ? m.content : m.content
+      }));
+
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: apiMessages,
+          profile,
+          faceAnalysis,
+          currentEvents: events
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        notify(err.error || "Lumi is having trouble. Try again.");
+        setSending(false);
+        return;
+      }
+
+      const data = await res.json();
+      let assistantText = data.text || "";
+      const newEventsAdded = [];
+      const eventsRemoved = [];
+
+      // Process tool calls
+      if (data.toolCalls && data.toolCalls.length > 0) {
+        for (const tc of data.toolCalls) {
+          if (tc.name === 'add_event') {
+            const newEvt = addEvent({
+              title: tc.input.title,
+              date: tc.input.date,
+              time: tc.input.time || '',
+              occasion: tc.input.occasion,
+              glam: tc.input.glam,
+              notes: tc.input.notes || ''
+            });
+            newEventsAdded.push(newEvt);
+          } else if (tc.name === 'remove_event') {
+            removeEvent(tc.input.id);
+            eventsRemoved.push(tc.input.id);
+          } else if (tc.name === 'list_events') {
+            // Just acknowledge — Lumi sees current events in system prompt
+          }
+        }
+      }
+
+      // Build assistant message with optional event card
+      const assistantMsg = {
+        role: 'assistant',
+        content: assistantText,
+        timestamp: Date.now(),
+        addedEvents: newEventsAdded.length > 0 ? newEventsAdded : null,
+        removedEvents: eventsRemoved.length > 0 ? eventsRemoved : null
+      };
+      setChatMessages(prev => [...prev, assistantMsg]);
+
+      if (newEventsAdded.length > 0) {
+        notify(`✨ ${newEventsAdded.length} event${newEventsAdded.length>1?'s':''} added to your calendar`);
+      }
+    } catch (e) {
+      notify("Network error. Please try again.");
+    }
+    setSending(false);
+    inputRef.current?.focus();
+  };
+
+  const clearChat = () => {
+    if (confirm("Clear chat history? Your events will stay safe.")) {
+      setChatMessages([]);
+      setTimeout(() => {
+        const greeting = `Hello ${profile.name || 'darling'}! ✨ How can I help you today?`;
+        setChatMessages([{ role: 'assistant', content: greeting, timestamp: Date.now() }]);
+      }, 100);
+    }
+  };
+
+  // Quick action prompts
+  const QUICK_PROMPTS = [
+    "I have a wedding next Saturday",
+    "What's coming up?",
+    "Suggest a look for tonight",
+    "How do I make my eyes pop?",
+  ];
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 120px)",position:"relative"}}>
+      {/* Header banner */}
+      <div style={{padding:"16px 20px 12px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:12,background:T.bgCard}}>
+        <div style={{
+          width:42, height:42, borderRadius:"50%",
+          background: T.btn,
+          display:"flex", alignItems:"center", justifyContent:"center",
+          fontSize:18, color:T.btnText, fontWeight:300, fontFamily:FF,
+          boxShadow:T.shadowGold
+        }}>L</div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:14,color:T.text,letterSpacing:2,fontWeight:300}}>LUMI</div>
+          <div style={{fontSize:8,color:T.accent,letterSpacing:2,marginTop:2}}>YOUR BEAUTY ADVISOR · ONLINE</div>
+        </div>
+        <button onClick={()=>setShowEvents(s=>!s)} style={{background:showEvents?T.accentDim:"transparent",border:`1px solid ${T.border}`,color:T.accent,fontSize:8,letterSpacing:2,padding:"6px 10px",cursor:"pointer",fontFamily:FF}}>
+          📅 {events.length}
+        </button>
+        <button onClick={clearChat} style={{background:"transparent",border:"none",color:T.textMuted,fontSize:11,cursor:"pointer",padding:6}}>↻</button>
+      </div>
+
+      {/* Events panel (collapsible) */}
+      {showEvents && (
+        <div style={{background:T.bgDeep,borderBottom:`1px solid ${T.border}`,padding:"12px 16px",maxHeight:240,overflowY:"auto"}}>
+          <div style={{fontSize:8,color:T.accent,letterSpacing:3,marginBottom:10}}>📅 BEAUTY CALENDAR</div>
+          {events.length === 0 ? (
+            <div style={{fontSize:10,color:T.textMuted,textAlign:"center",padding:"16px 0",fontStyle:"italic"}}>No upcoming events. Tell Lumi what's coming up!</div>
+          ) : (
+            events.map(e => <EventCard key={e.id} event={e} T={T} onRemove={()=>removeEvent(e.id)}/>)
+          )}
+        </div>
+      )}
+
+      {/* Messages */}
+      <div style={{flex:1,overflowY:"auto",padding:"16px 16px 8px",display:"flex",flexDirection:"column",gap:12}}>
+        {chatMessages.map((msg, i) => (
+          <Message key={i} message={msg} T={T} setTab={setTab}/>
+        ))}
+        {sending && (
+          <div style={{display:"flex",gap:8,alignItems:"center",padding:"8px 14px",background:T.bgCard,border:`1px solid ${T.border}`,maxWidth:"75%",alignSelf:"flex-start"}}>
+            <div style={{display:"flex",gap:4}}>
+              <div style={{width:6,height:6,borderRadius:"50%",background:T.accent,animation:"typingDot 1.4s infinite ease-in-out",animationDelay:"0s"}}/>
+              <div style={{width:6,height:6,borderRadius:"50%",background:T.accent,animation:"typingDot 1.4s infinite ease-in-out",animationDelay:"0.2s"}}/>
+              <div style={{width:6,height:6,borderRadius:"50%",background:T.accent,animation:"typingDot 1.4s infinite ease-in-out",animationDelay:"0.4s"}}/>
+            </div>
+            <span style={{fontSize:9,color:T.textMuted,letterSpacing:1}}>Lumi is thinking</span>
+          </div>
+        )}
+        <div ref={messagesEndRef}/>
+        <style>{`
+          @keyframes typingDot {
+            0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+            30% { opacity: 1; transform: translateY(-3px); }
+          }
+        `}</style>
+      </div>
+
+      {/* Quick prompts (only show if conversation is fresh) */}
+      {chatMessages.length <= 1 && (
+        <div style={{padding:"4px 14px 8px",display:"flex",gap:6,flexWrap:"wrap"}}>
+          {QUICK_PROMPTS.map(p => (
+            <button key={p} onClick={()=>sendMessage(p)} disabled={sending}
+              style={{background:T.bgCard,border:`1px solid ${T.border}`,color:T.textSub,fontSize:9,padding:"7px 11px",cursor:"pointer",fontFamily:FF,letterSpacing:0.5,whiteSpace:"nowrap",transition:"all 0.2s"}}>
+              {p}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Input */}
+      <div style={{padding:"10px 14px 14px",borderTop:`1px solid ${T.border}`,background:T.bg,display:"flex",gap:8,alignItems:"flex-end"}}>
+        <textarea
+          ref={inputRef}
+          value={input}
+          onChange={e=>setInput(e.target.value)}
+          onKeyDown={e=>{
+            if (e.key==='Enter' && !e.shiftKey) {
+              e.preventDefault();
+              sendMessage(input);
+            }
+          }}
+          placeholder="Message Lumi..."
+          rows={1}
+          style={{
+            flex:1, background:T.bgCard, border:`1px solid ${T.border}`,
+            color:T.text, fontSize:13, padding:"10px 14px",
+            outline:"none", fontFamily:FF, resize:"none",
+            maxHeight:90, lineHeight:1.5, caretColor:T.accent
+          }}
+        />
+        <button
+          onClick={()=>sendMessage(input)}
+          disabled={!input.trim() || sending}
+          style={{
+            background: input.trim() && !sending ? T.btn : "transparent",
+            color: input.trim() && !sending ? T.btnText : T.textMuted,
+            border: input.trim() && !sending ? "none" : `1px solid ${T.border}`,
+            width:42, height:42, cursor: input.trim() && !sending ? "pointer" : "default",
+            fontSize:16, fontWeight:700, transition:"all 0.2s", flexShrink:0
+          }}
+        >→</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── MESSAGE BUBBLE ──────────────────────────────────────────
+function Message({ message, T, setTab }) {
+  const isUser = message.role === 'user';
+  return (
+    <div style={{display:"flex",flexDirection:"column",alignItems:isUser?"flex-end":"flex-start",gap:6}}>
+      <div style={{
+        maxWidth:"82%",
+        background: isUser ? T.btn : T.bgCard,
+        color: isUser ? T.btnText : T.text,
+        border: isUser ? "none" : `1px solid ${T.border}`,
+        padding:"11px 15px",
+        fontSize:13, lineHeight:1.55,
+        fontWeight: isUser ? 500 : 400,
+        boxShadow: isUser ? T.shadowGold : "none",
+        whiteSpace:"pre-wrap",
+        wordBreak:"break-word"
+      }}>
+        {message.content}
+      </div>
+
+      {/* Show event cards when Lumi added events */}
+      {message.addedEvents && message.addedEvents.map(e => (
+        <div key={e.id} style={{
+          maxWidth:"82%",
+          background:T.accentDim, border:`1px solid ${T.accentBorder}`,
+          padding:"10px 13px", fontSize:11
+        }}>
+          <div style={{fontSize:7,letterSpacing:3,color:T.accent,marginBottom:4}}>✨ ADDED TO CALENDAR</div>
+          <div style={{color:T.text,fontWeight:500,marginBottom:3}}>{e.title}</div>
+          <div style={{color:T.textSub,fontSize:10}}>
+            📅 {formatDate(e.date)}{e.time?` · ${e.time}`:''} · {OCCS.find(o=>o.id===e.occasion)?.icon} {OCCS.find(o=>o.id===e.occasion)?.label}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── EVENT CARD ──────────────────────────────────────────────
+function EventCard({ event, T, onRemove }) {
+  const occInfo = OCCS.find(o => o.id === event.occasion);
+  const daysAway = Math.ceil((new Date(event.date) - new Date()) / (1000*60*60*24));
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:11,padding:"10px 12px",background:T.bgCard,border:`1px solid ${T.border}`,marginBottom:6}}>
+      <div style={{fontSize:18}}>{occInfo?.icon || "📅"}</div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:11,color:T.text,marginBottom:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{event.title}</div>
+        <div style={{fontSize:8,color:T.accent,letterSpacing:1}}>
+          {daysAway < 0 ? "PAST" : daysAway === 0 ? "TODAY" : daysAway === 1 ? "TOMORROW" : `IN ${daysAway} DAYS`}
+          {event.time && ` · ${event.time}`}
+        </div>
+        <div style={{fontSize:7,color:T.textMuted,marginTop:1}}>{formatDate(event.date)} · {event.glam} glam</div>
+      </div>
+      <button onClick={onRemove} style={{background:"transparent",border:"none",color:T.textMuted,fontSize:14,cursor:"pointer",padding:4}}>×</button>
+    </div>
+  );
+}
+
+function formatDate(dateStr) {
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch { return dateStr; }
+}
+
+// ─── TUTORIAL PLAYER ─────────────────────────────────────────
 function TutorialPlayer({ T, result, preview, occ, glam, onClose }) {
   const [stepIdx, setStepIdx] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [progress, setProgress] = useState(0);
-  const [voiceReady, setVoiceReady] = useState(false);
   const utteranceRef = useRef(null);
   const progressRef = useRef(null);
 
@@ -144,52 +471,34 @@ function TutorialPlayer({ T, result, preview, occ, glam, onClose }) {
   const currentStep = steps[stepIdx];
   const overlay = currentStep ? STEP_OVERLAYS[currentStep.key] : null;
 
-  // Initialize voice and play current step
   useEffect(() => {
     if (!currentStep || !playing) return;
-
-    // Cancel any ongoing speech
     window.speechSynthesis.cancel();
-
-    // Wait briefly for voices to load
     const speakStep = () => {
       const voices = window.speechSynthesis.getVoices();
-      // Prefer a female English voice
       const preferred = voices.find(v =>
         /female|samantha|victoria|karen|moira|tessa|fiona|allison|ava/i.test(v.name) && v.lang.startsWith('en')
       ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
-
       const text = `Step ${stepIdx + 1}. ${currentStep.title}. ${currentStep.instruction}`;
       const utterance = new SpeechSynthesisUtterance(text);
       if (preferred) utterance.voice = preferred;
       utterance.rate = 0.92;
       utterance.pitch = 1.05;
       utterance.volume = 1;
-
-      utterance.onstart = () => setVoiceReady(true);
       utterance.onend = () => {
-        // Auto-advance to next step
         setTimeout(() => {
           setStepIdx(prev => prev < steps.length - 1 ? prev + 1 : prev);
         }, 800);
       };
-
       utteranceRef.current = utterance;
       window.speechSynthesis.speak(utterance);
     };
-
     if (window.speechSynthesis.getVoices().length === 0) {
       window.speechSynthesis.onvoiceschanged = () => speakStep();
-    } else {
-      speakStep();
-    }
-
-    return () => {
-      window.speechSynthesis.cancel();
-    };
+    } else { speakStep(); }
+    return () => { window.speechSynthesis.cancel(); };
   }, [stepIdx, playing]);
 
-  // Progress bar animation
   useEffect(() => {
     if (!playing || !overlay) return;
     setProgress(0);
@@ -204,25 +513,16 @@ function TutorialPlayer({ T, result, preview, occ, glam, onClose }) {
   }, [stepIdx, playing, overlay]);
 
   const togglePlay = () => {
-    if (playing) {
-      window.speechSynthesis.pause();
-    } else {
-      window.speechSynthesis.resume();
-    }
+    if (playing) window.speechSynthesis.pause();
+    else window.speechSynthesis.resume();
     setPlaying(!playing);
   };
-
-  const goToStep = (i) => {
-    window.speechSynthesis.cancel();
-    setStepIdx(i);
-    setPlaying(true);
-  };
+  const goToStep = (i) => { window.speechSynthesis.cancel(); setStepIdx(i); setPlaying(true); };
 
   if (!result || !currentStep) return null;
 
   return (
     <div style={{minHeight:"100vh",background:"#000",fontFamily:FF,maxWidth:480,margin:"0 auto",position:"relative",overflow:"hidden"}}>
-      {/* Top bar */}
       <div style={{position:"absolute",top:0,left:0,right:0,zIndex:20,background:"linear-gradient(to bottom,rgba(0,0,0,0.85),transparent)",padding:"16px 18px 28px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <button style={{background:"transparent",border:"none",color:"#fff",fontSize:11,letterSpacing:2,cursor:"pointer"}} onClick={onClose}>✕ CLOSE</button>
@@ -232,76 +532,48 @@ function TutorialPlayer({ T, result, preview, occ, glam, onClose }) {
           </div>
           <div style={{fontSize:10,color:T.accent,letterSpacing:2}}>{stepIdx+1}/{steps.length}</div>
         </div>
-        {/* Step progress dots */}
         <div style={{display:"flex",gap:5,justifyContent:"center"}}>
           {steps.map((_, i) => (
-            <button key={i} onClick={()=>goToStep(i)}
-              style={{
-                width: i===stepIdx ? 22 : 6, height:4,
-                background: i < stepIdx ? T.accent : i===stepIdx ? "#fff" : "rgba(255,255,255,0.25)",
-                border:"none", padding:0, cursor:"pointer", transition:"all 0.4s"
-              }}
-            />
+            <button key={i} onClick={()=>goToStep(i)} style={{
+              width: i===stepIdx ? 22 : 6, height:4,
+              background: i < stepIdx ? T.accent : i===stepIdx ? "#fff" : "rgba(255,255,255,0.25)",
+              border:"none", padding:0, cursor:"pointer", transition:"all 0.4s"
+            }}/>
           ))}
         </div>
       </div>
-
-      {/* Main face display with overlays */}
       <div style={{position:"relative",height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#000"}}>
         {preview && (
           <div style={{position:"relative",width:"100%",height:"100%",overflow:"hidden"}}>
             <img src={preview} alt="Your face" style={{width:"100%",height:"100%",objectFit:"cover",filter:"brightness(1.05)"}}/>
-
-            {/* Animated color overlay based on step */}
             <FaceOverlay overlay={overlay} stepIdx={stepIdx} progress={progress} accent={T.accent}/>
-
-            {/* Subtle gold glow border */}
             <div style={{position:"absolute",inset:0,boxShadow:`inset 0 0 80px rgba(212,175,122,0.3)`,pointerEvents:"none"}}/>
           </div>
         )}
       </div>
-
-      {/* Bottom instruction panel */}
       <div style={{position:"absolute",bottom:0,left:0,right:0,zIndex:20,background:"linear-gradient(to top,rgba(0,0,0,0.95) 50%,transparent)",padding:"60px 20px 28px"}}>
-        {/* Step progress bar */}
         <div style={{height:2,background:"rgba(255,255,255,0.12)",marginBottom:16,position:"relative"}}>
           <div style={{position:"absolute",top:0,left:0,height:"100%",width:`${progress}%`,background:T.accent,transition:"width 0.05s linear"}}/>
         </div>
-
         <div style={{textAlign:"center",marginBottom:18}}>
           <div style={{fontSize:8,letterSpacing:4,color:T.accent,marginBottom:6}}>STEP {stepIdx+1} OF {steps.length}</div>
           <div style={{fontSize:18,color:"#fff",fontWeight:300,marginBottom:10,letterSpacing:1}}>{currentStep.title}</div>
           <div style={{fontSize:12,color:"rgba(255,255,255,0.78)",lineHeight:1.7,maxWidth:340,margin:"0 auto"}}>{currentStep.instruction}</div>
         </div>
-
-        {/* Player controls */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:24}}>
-          <button
-            onClick={()=>stepIdx > 0 && goToStep(stepIdx-1)}
-            disabled={stepIdx===0}
-            style={{background:"transparent",border:`1px solid rgba(255,255,255,0.25)`,color:"#fff",width:42,height:42,borderRadius:"50%",cursor: stepIdx>0 ? "pointer":"default",fontSize:14,opacity: stepIdx>0 ? 1:0.3}}
-          >←</button>
-
-          <button
-            onClick={togglePlay}
-            style={{
-              width:64, height:64, borderRadius:"50%",
-              background: T.accent,
-              border:"none", cursor:"pointer",
-              display:"flex", alignItems:"center", justifyContent:"center",
-              boxShadow:T.shadowGold, transition:"all 0.3s"
-            }}
-          >
+          <button onClick={()=>stepIdx > 0 && goToStep(stepIdx-1)} disabled={stepIdx===0}
+            style={{background:"transparent",border:`1px solid rgba(255,255,255,0.25)`,color:"#fff",width:42,height:42,borderRadius:"50%",cursor: stepIdx>0 ? "pointer":"default",fontSize:14,opacity: stepIdx>0 ? 1:0.3}}>←</button>
+          <button onClick={togglePlay} style={{
+            width:64, height:64, borderRadius:"50%",
+            background: T.accent, border:"none", cursor:"pointer",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            boxShadow:T.shadowGold, transition:"all 0.3s"
+          }}>
             <span style={{color:"#0D1B2A",fontSize:20}}>{playing ? "❚❚" : "▶"}</span>
           </button>
-
-          <button
-            onClick={()=>stepIdx < steps.length-1 && goToStep(stepIdx+1)}
-            disabled={stepIdx===steps.length-1}
-            style={{background:"transparent",border:`1px solid rgba(255,255,255,0.25)`,color:"#fff",width:42,height:42,borderRadius:"50%",cursor: stepIdx<steps.length-1 ? "pointer":"default",fontSize:14,opacity: stepIdx<steps.length-1 ? 1:0.3}}
-          >→</button>
+          <button onClick={()=>stepIdx < steps.length-1 && goToStep(stepIdx+1)} disabled={stepIdx===steps.length-1}
+            style={{background:"transparent",border:`1px solid rgba(255,255,255,0.25)`,color:"#fff",width:42,height:42,borderRadius:"50%",cursor: stepIdx<steps.length-1 ? "pointer":"default",fontSize:14,opacity: stepIdx<steps.length-1 ? 1:0.3}}>→</button>
         </div>
-
         <div style={{textAlign:"center",marginTop:14,fontSize:8,color:"rgba(255,255,255,0.4)",letterSpacing:2}}>
           {playing ? "🔊 PLAYING · AUTO-ADVANCING" : "⏸ PAUSED · TAP PLAY TO RESUME"}
         </div>
@@ -310,134 +582,43 @@ function TutorialPlayer({ T, result, preview, occ, glam, onClose }) {
   );
 }
 
-// ─── ANIMATED FACE OVERLAY COMPONENT ─────────────────────────
 function FaceOverlay({ overlay, stepIdx, progress, accent }) {
   if (!overlay) return null;
   const opacity = Math.min(progress / 100, 0.85);
-
   return (
     <div style={{position:"absolute",inset:0,pointerEvents:"none"}}>
-      {/* Full face wash for skin prep, foundation, setting */}
       {overlay.zone === "all" && (
-        <div style={{
-          position:"absolute", inset:0,
-          background: overlay.color,
-          opacity: opacity * 0.7,
-          mixBlendMode:"multiply",
-          transition:"opacity 0.5s ease"
-        }}/>
+        <div style={{position:"absolute", inset:0, background: overlay.color, opacity: opacity * 0.7, mixBlendMode:"multiply", transition:"opacity 0.5s ease"}}/>
       )}
-
-      {/* Side contour lines */}
       {overlay.zone === "sides" && (
         <>
-          <div style={{
-            position:"absolute", top:"32%", left:"12%", width:"18%", height:"40%",
-            background:`linear-gradient(135deg, transparent, ${overlay.color}, transparent)`,
-            opacity: opacity, mixBlendMode:"multiply",
-            transform:"rotate(-15deg)", filter:"blur(20px)",
-            transition:"opacity 0.5s ease"
-          }}/>
-          <div style={{
-            position:"absolute", top:"32%", right:"12%", width:"18%", height:"40%",
-            background:`linear-gradient(-135deg, transparent, ${overlay.color}, transparent)`,
-            opacity: opacity, mixBlendMode:"multiply",
-            transform:"rotate(15deg)", filter:"blur(20px)",
-            transition:"opacity 0.5s ease"
-          }}/>
+          <div style={{position:"absolute", top:"32%", left:"12%", width:"18%", height:"40%", background:`linear-gradient(135deg, transparent, ${overlay.color}, transparent)`, opacity: opacity, mixBlendMode:"multiply", transform:"rotate(-15deg)", filter:"blur(20px)", transition:"opacity 0.5s ease"}}/>
+          <div style={{position:"absolute", top:"32%", right:"12%", width:"18%", height:"40%", background:`linear-gradient(-135deg, transparent, ${overlay.color}, transparent)`, opacity: opacity, mixBlendMode:"multiply", transform:"rotate(15deg)", filter:"blur(20px)", transition:"opacity 0.5s ease"}}/>
         </>
       )}
-
-      {/* Cheek blush spots */}
       {overlay.zone === "cheeks" && (
         <>
-          <div style={{
-            position:"absolute", top:"45%", left:"20%", width:"22%", height:"22%",
-            background: `radial-gradient(circle, ${overlay.color} 0%, transparent 70%)`,
-            opacity: opacity, mixBlendMode:"multiply",
-            animation:"pulse 2s ease-in-out infinite",
-            transition:"opacity 0.5s ease"
-          }}/>
-          <div style={{
-            position:"absolute", top:"45%", right:"20%", width:"22%", height:"22%",
-            background: `radial-gradient(circle, ${overlay.color} 0%, transparent 70%)`,
-            opacity: opacity, mixBlendMode:"multiply",
-            animation:"pulse 2s ease-in-out infinite",
-            transition:"opacity 0.5s ease"
-          }}/>
+          <div style={{position:"absolute", top:"45%", left:"20%", width:"22%", height:"22%", background: `radial-gradient(circle, ${overlay.color} 0%, transparent 70%)`, opacity: opacity, mixBlendMode:"multiply", animation:"pulse 2s ease-in-out infinite", transition:"opacity 0.5s ease"}}/>
+          <div style={{position:"absolute", top:"45%", right:"20%", width:"22%", height:"22%", background: `radial-gradient(circle, ${overlay.color} 0%, transparent 70%)`, opacity: opacity, mixBlendMode:"multiply", animation:"pulse 2s ease-in-out infinite", transition:"opacity 0.5s ease"}}/>
         </>
       )}
-
-      {/* Eye zones */}
       {overlay.zone === "eyes" && (
         <>
-          <div style={{
-            position:"absolute", top:"32%", left:"22%", width:"20%", height:"10%",
-            background: overlay.color,
-            opacity: opacity * 0.9, mixBlendMode:"multiply",
-            borderRadius:"50%", filter:"blur(8px)",
-            transition:"opacity 0.5s ease"
-          }}/>
-          <div style={{
-            position:"absolute", top:"32%", right:"22%", width:"20%", height:"10%",
-            background: overlay.color,
-            opacity: opacity * 0.9, mixBlendMode:"multiply",
-            borderRadius:"50%", filter:"blur(8px)",
-            transition:"opacity 0.5s ease"
-          }}/>
+          <div style={{position:"absolute", top:"32%", left:"22%", width:"20%", height:"10%", background: overlay.color, opacity: opacity * 0.9, mixBlendMode:"multiply", borderRadius:"50%", filter:"blur(8px)", transition:"opacity 0.5s ease"}}/>
+          <div style={{position:"absolute", top:"32%", right:"22%", width:"20%", height:"10%", background: overlay.color, opacity: opacity * 0.9, mixBlendMode:"multiply", borderRadius:"50%", filter:"blur(8px)", transition:"opacity 0.5s ease"}}/>
         </>
       )}
-
-      {/* Brows */}
       {overlay.zone === "brows" && (
         <>
-          <div style={{
-            position:"absolute", top:"28%", left:"22%", width:"18%", height:"3%",
-            background: overlay.color,
-            opacity: opacity, mixBlendMode:"multiply",
-            borderRadius:"50%", filter:"blur(4px)",
-            transition:"opacity 0.5s ease"
-          }}/>
-          <div style={{
-            position:"absolute", top:"28%", right:"22%", width:"18%", height:"3%",
-            background: overlay.color,
-            opacity: opacity, mixBlendMode:"multiply",
-            borderRadius:"50%", filter:"blur(4px)",
-            transition:"opacity 0.5s ease"
-          }}/>
+          <div style={{position:"absolute", top:"28%", left:"22%", width:"18%", height:"3%", background: overlay.color, opacity: opacity, mixBlendMode:"multiply", borderRadius:"50%", filter:"blur(4px)", transition:"opacity 0.5s ease"}}/>
+          <div style={{position:"absolute", top:"28%", right:"22%", width:"18%", height:"3%", background: overlay.color, opacity: opacity, mixBlendMode:"multiply", borderRadius:"50%", filter:"blur(4px)", transition:"opacity 0.5s ease"}}/>
         </>
       )}
-
-      {/* Lips */}
       {overlay.zone === "lips" && (
-        <div style={{
-          position:"absolute", top:"66%", left:"36%", width:"28%", height:"7%",
-          background: overlay.color,
-          opacity: opacity * 0.95, mixBlendMode:"multiply",
-          borderRadius:"50%", filter:"blur(6px)",
-          transition:"opacity 0.5s ease"
-        }}/>
+        <div style={{position:"absolute", top:"66%", left:"36%", width:"28%", height:"7%", background: overlay.color, opacity: opacity * 0.95, mixBlendMode:"multiply", borderRadius:"50%", filter:"blur(6px)", transition:"opacity 0.5s ease"}}/>
       )}
-
-      {/* Shimmer effect for setting/skin prep */}
-      {(overlay.zone === "all" && (stepIdx === 0 || stepIdx === 7)) && (
-        <div style={{
-          position:"absolute", inset:0,
-          background: `radial-gradient(circle at 50% 40%, rgba(255,250,230,0.4) 0%, transparent 50%)`,
-          opacity: opacity * 0.5,
-          animation: "shimmer 3s ease-in-out infinite",
-        }}/>
-      )}
-
       <style>{`
-        @keyframes pulse {
-          0%, 100% { transform: scale(1); }
-          50% { transform: scale(1.08); }
-        }
-        @keyframes shimmer {
-          0%, 100% { opacity: 0.3; }
-          50% { opacity: 0.6; }
-        }
+        @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
       `}</style>
     </div>
   );
@@ -629,9 +810,15 @@ function CameraScan({ T, scans, setScans, onDone, onCancel, notify }) {
   );
 }
 
-// ─── SHELL ───────────────────────────────────────────────────
+// ─── SHELL (5 TABS) ──────────────────────────────────────────
 function Shell({T, manual, setManual, occ, profile, tab, setTab, notif, children}) {
-  const NAV = [{id:"home",icon:"⌂",label:"Home"},{id:"scan",icon:"◈",label:"Scan"},{id:"looks",icon:"♡",label:"Saved"},{id:"profile",icon:"◉",label:"Profile"}];
+  const NAV = [
+    {id:"home",icon:"⌂",label:"Home"},
+    {id:"scan",icon:"◈",label:"Scan"},
+    {id:"looks",icon:"♡",label:"Saved"},
+    {id:"lumi",icon:"L",label:"Lumi", special:true},
+    {id:"profile",icon:"◉",label:"Profile"}
+  ];
   return (
     <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",background:T.bg,fontFamily:FF,maxWidth:480,margin:"0 auto",position:"relative",transition:"background 0.7s"}}>
       <div style={{position:"fixed",inset:0,background:T.heroGlow,pointerEvents:"none",zIndex:0,transition:"background 0.7s"}}/>
@@ -649,9 +836,23 @@ function Shell({T, manual, setManual, occ, profile, tab, setTab, notif, children
       <div style={{flex:1,overflowY:"auto",paddingBottom:80,position:"relative",zIndex:1}}>{children}</div>
       <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:T.bg,backdropFilter:"blur(20px)",borderTop:`1px solid ${T.border}`,display:"flex",zIndex:10,transition:"background 0.7s"}}>
         {NAV.map(n=>(
-          <button key={n.id} style={{flex:1,background:"transparent",border:"none",color:tab===n.id?T.accent:T.textMuted,padding:"12px 0 16px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4,transition:"color 0.2s"}} onClick={()=>setTab(n.id)}>
-            <span style={{fontSize:18}}>{n.icon}</span>
-            <span style={{fontSize:9,letterSpacing:2}}>{n.label}</span>
+          <button key={n.id} style={{flex:1,background:"transparent",border:"none",color:tab===n.id?T.accent:T.textMuted,padding:"10px 0 14px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,transition:"color 0.2s",position:"relative"}} onClick={()=>setTab(n.id)}>
+            {n.special ? (
+              <div style={{
+                width:26, height:26, borderRadius:"50%",
+                background: tab===n.id ? T.btn : T.accentDim,
+                color: tab===n.id ? T.btnText : T.accent,
+                display:"flex", alignItems:"center", justifyContent:"center",
+                fontSize:13, fontWeight:300, fontFamily:FF,
+                border: `1px solid ${tab===n.id ? "transparent" : T.accentBorder}`,
+                boxShadow: tab===n.id ? T.shadowGold : "none",
+                transition:"all 0.2s",
+                marginBottom:1
+              }}>{n.icon}</div>
+            ) : (
+              <span style={{fontSize:17}}>{n.icon}</span>
+            )}
+            <span style={{fontSize:8,letterSpacing:2}}>{n.label}</span>
           </button>
         ))}
       </div>
@@ -673,7 +874,7 @@ function Splash({T, go}) {
         <div style={{fontSize:52,fontWeight:300,color:T.text,letterSpacing:14,marginBottom:4,lineHeight:1}}>LUMIÈRE</div>
         <div style={{fontSize:8,letterSpacing:8,color:T.accent,marginBottom:54}}>AI BEAUTY COMPANION</div>
         <div style={{fontSize:26,fontWeight:300,color:T.text,lineHeight:1.5,marginBottom:20,letterSpacing:1}}>Your face.<br/>Your tutorial.<br/><span style={{color:T.accent}}>Your glow.</span></div>
-        <div style={{fontSize:13,color:T.textMuted,lineHeight:1.8,marginBottom:52,maxWidth:280}}>Personalized AI makeup tutorials with voice guidance — generated on your own face for every occasion.</div>
+        <div style={{fontSize:13,color:T.textMuted,lineHeight:1.8,marginBottom:52,maxWidth:280}}>Personalized AI makeup tutorials with voice guidance — and your own beauty advisor, Lumi. ✨</div>
         <button style={{background:T.btn,color:T.btnText,border:"none",padding:"18px 48px",fontSize:10,letterSpacing:5,fontWeight:700,cursor:"pointer",width:"100%",maxWidth:320,marginBottom:22,boxShadow:T.shadowGold}} onClick={go}>BEGIN YOUR JOURNEY</button>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{height:1,width:20,background:T.accentBorder}}/><span style={{fontSize:8,color:T.textMuted,letterSpacing:3}}>POWERED BY AI</span><div style={{height:1,width:20,background:T.accentBorder}}/>
@@ -722,9 +923,10 @@ function Onboard({T, profile, setProfile, step, setStep, done}) {
   );
 }
 
-// ─── HOME ────────────────────────────────────────────────────
-function Home({T, profile, preview, looks, setTab}) {
-  const tips = ["Update your face scan after weight changes for better accuracy ◆","Try the new Voice Tutorial Player — your face transforms step by step 🎬","Day occasions reveal Pearl Morning — warm ivory and espresso ☀️","Save your looks to recreate them before every big occasion 💄"];
+// ─── HOME (now with upcoming events) ─────────────────────────
+function Home({T, profile, preview, looks, events, setTab}) {
+  const upcomingEvents = events.filter(e => new Date(e.date) >= new Date(new Date().toDateString())).slice(0, 2);
+  const tips = ["Update your face scan after weight changes for better accuracy ◆","Try chatting with Lumi — your personal beauty advisor 💬","Day occasions reveal Pearl Morning — warm ivory and espresso ☀️","Save your looks to recreate them before every big occasion 💄"];
   return (
     <div style={{padding:"24px 20px"}}>
       <div style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:20,marginBottom:20,display:"flex",gap:16,alignItems:"center",boxShadow:T.shadow}}>
@@ -741,13 +943,48 @@ function Home({T, profile, preview, looks, setTab}) {
           </div>}
         </div>
       </div>
+
+      {/* NEW: Upcoming events */}
+      {upcomingEvents.length > 0 && (
+        <>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:9}}>
+            <div style={{fontSize:8,letterSpacing:4,color:T.accent}}>📅 UPCOMING EVENTS</div>
+            <button onClick={()=>setTab("lumi")} style={{background:"transparent",border:"none",color:T.textMuted,fontSize:8,letterSpacing:2,cursor:"pointer"}}>VIEW ALL →</button>
+          </div>
+          {upcomingEvents.map(e => {
+            const occInfo = OCCS.find(o => o.id === e.occasion);
+            const daysAway = Math.ceil((new Date(e.date) - new Date()) / (1000*60*60*24));
+            return (
+              <div key={e.id} style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:"12px 14px",marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
+                <div style={{fontSize:20}}>{occInfo?.icon}</div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:12,color:T.text,marginBottom:2}}>{e.title}</div>
+                  <div style={{fontSize:8,color:T.accent,letterSpacing:2}}>
+                    {daysAway === 0 ? "TODAY" : daysAway === 1 ? "TOMORROW" : `IN ${daysAway} DAYS`} · {e.glam.toUpperCase()} GLAM
+                  </div>
+                </div>
+                <div style={{fontSize:7,color:T.textMuted}}>{formatDate(e.date)}</div>
+              </div>
+            );
+          })}
+          <div style={{marginBottom:20}}/>
+        </>
+      )}
+
       <div style={{background:T.accentDim,border:`1px solid ${T.accentBorder}`,padding:"13px 15px",marginBottom:20,display:"flex",gap:12,alignItems:"flex-start"}}>
-        <div style={{fontSize:16,flexShrink:0}}>🎬</div>
-        <div>
-          <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:3}}>NEW · VOICE TUTORIAL PLAYER</div>
-          <div style={{fontSize:11,color:T.textSub,lineHeight:1.65}}>Watch your face transform through 8 makeup steps with voice-guided narration. Each step animates on your photo.</div>
+        <div style={{
+          width:34,height:34,borderRadius:"50%",background:T.btn,color:T.btnText,
+          display:"flex",alignItems:"center",justifyContent:"center",
+          fontSize:14,fontWeight:300,fontFamily:FF,flexShrink:0,
+          boxShadow:T.shadowGold
+        }}>L</div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:3}}>NEW · MEET LUMI ✨</div>
+          <div style={{fontSize:11,color:T.textSub,lineHeight:1.65,marginBottom:8}}>Your personal AI beauty advisor. Chat about looks, manage your beauty calendar, get expert tips.</div>
+          <button onClick={()=>setTab("lumi")} style={{background:"transparent",border:`1px solid ${T.accent}`,color:T.accent,fontSize:8,letterSpacing:3,padding:"6px 12px",cursor:"pointer",fontFamily:FF}}>START CHATTING →</button>
         </div>
       </div>
+
       <div style={{fontSize:8,letterSpacing:4,color:T.accent,marginBottom:9}}>☀️ DAY OCCASIONS → PEARL MORNING</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:18}}>
         {OCCS.filter(o=>o.t==="light").map(o=>(
@@ -912,12 +1149,9 @@ function Results({T, result, preview, occ, glam, onSave, onBack, onNew, onPlay})
             </div>
           </div>
         </div>
-
-        {/* 🎬 NEW — Watch Tutorial CTA */}
         <button onClick={onPlay} style={{width:"100%",background:T.btn,color:T.btnText,border:"none",padding:"16px",fontSize:11,letterSpacing:4,fontWeight:700,cursor:"pointer",marginBottom:18,boxShadow:T.shadowGold,display:"flex",alignItems:"center",justifyContent:"center",gap:10,fontFamily:FF}}>
           <span style={{fontSize:16}}>🎬</span> WATCH GUIDED TUTORIAL
         </button>
-
         <div style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:15,marginBottom:17}}>
           <div style={{fontSize:8,letterSpacing:4,color:T.accent,marginBottom:12}}>◆ FACE ANALYSIS</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:11,marginBottom:11}}>
