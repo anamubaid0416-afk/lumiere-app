@@ -63,7 +63,7 @@ const STEP_OVERLAYS = {
 
 const FF = "'Palatino Linotype','Book Antiqua',Palatino,serif";
 
-// ─── LOCALSTORAGE HELPERS ────────────────────────────────────
+// ─── STORAGE ─────────────────────────────────────────────────
 const STORAGE = {
   load(key, fallback) {
     try {
@@ -91,6 +91,8 @@ export default function Lumiere() {
   const [looks, setLooks] = useState(() => STORAGE.load('looks', []));
   const [events, setEvents] = useState(() => STORAGE.load('events', []));
   const [chatMessages, setChatMessages] = useState(() => STORAGE.load('chatMessages', []));
+  const [scanHistory, setScanHistory] = useState(() => STORAGE.load('scanHistory', []));
+  const [lastChatOpenedDate, setLastChatOpenedDate] = useState(() => STORAGE.load('lastChatOpened', null));
   const [notif, setNotif] = useState(null);
   const [manual, setManual] = useState("dark");
 
@@ -99,18 +101,18 @@ export default function Lumiere() {
   const hasFullScan = SCAN_ANGLES.every(a => scans[a.id]);
   const primaryFace = scans.front || Object.values(scans)[0] || null;
 
-  // Persist data on change
+  // Persist
   useEffect(() => STORAGE.save('profile', profile), [profile]);
   useEffect(() => STORAGE.save('looks', looks), [looks]);
   useEffect(() => STORAGE.save('events', events), [events]);
   useEffect(() => STORAGE.save('chatMessages', chatMessages), [chatMessages]);
+  useEffect(() => STORAGE.save('scanHistory', scanHistory), [scanHistory]);
+  useEffect(() => STORAGE.save('lastChatOpened', lastChatOpenedDate), [lastChatOpenedDate]);
   useEffect(() => { if (result) STORAGE.save('lastResult', result); }, [result]);
 
-  // Skip splash if user already onboarded
+  // Skip splash if onboarded
   useEffect(() => {
-    if (profile.name && screen === "splash") {
-      setScreen("main");
-    }
+    if (profile.name && screen === "splash") setScreen("main");
   }, []);
 
   const analyze = useCallback(async () => {
@@ -129,6 +131,14 @@ export default function Lumiere() {
         setLoading(false); return;
       }
       const parsed = await res.json();
+      // Add to scan history
+      const scanEntry = {
+        id: 'scan_' + Date.now(),
+        date: new Date().toISOString(),
+        analysis: parsed,
+        primaryFace: scans.front
+      };
+      setScanHistory(p => [scanEntry, ...p].slice(0, 10)); // Keep last 10 scans
       setResult(parsed); setScreen("results");
     } catch { notify("Network error. Please try again."); }
     setLoading(false);
@@ -136,19 +146,22 @@ export default function Lumiere() {
 
   const saveLook = () => {
     if (!result) return;
-    setLooks(p=>[{id:Date.now(), lookName:result.lookName, occasion:OCCS.find(o=>o.id===occ)?.label, occ, glam, preview:primaryFace, date:new Date().toLocaleDateString(), dk:OCC_THEME[occ]||"dark"}, ...p]);
+    setLooks(p=>[{id:Date.now(), lookName:result.lookName, occasion:OCCS.find(o=>o.id===occ)?.label, occ, glam, preview:primaryFace, date:new Date().toLocaleDateString(), dk:OCC_THEME[occ]||"dark"},...p]);
     notify("✨ Look saved!");
   };
-
   const resetScan = () => setScans({});
 
-  // Event management
   const addEvent = (event) => {
-    const newEvent = { ...event, id: 'evt_' + Date.now() };
+    const newEvent = { ...event, id: 'evt_' + Date.now(), createdAt: new Date().toISOString() };
     setEvents(p => [...p, newEvent].sort((a,b)=>new Date(a.date)-new Date(b.date)));
     return newEvent;
   };
+  const updateEvent = (id, updates) => {
+    setEvents(p => p.map(e => e.id === id ? { ...e, ...updates } : e));
+  };
   const removeEvent = (id) => setEvents(p => p.filter(e => e.id !== id));
+
+  const lastScanDate = scanHistory.length > 0 ? scanHistory[0].date : null;
 
   if (screen==="splash") return <Splash T={DARK} go={()=>setScreen("onboard")}/>;
   if (screen==="onboard") return <Onboard T={DARK} profile={profile} setProfile={setProfile} step={pStep} setStep={setPStep} done={()=>setScreen("main")}/>;
@@ -157,38 +170,73 @@ export default function Lumiere() {
   if (screen==="results") return <Results T={T} result={result} preview={primaryFace} occ={OCCS.find(o=>o.id===occ)} glam={glam} onSave={saveLook} onBack={()=>setScreen("main")} onNew={()=>{setResult(null); setScreen("main"); setTab("scan");}} onPlay={()=>setScreen("player")}/>;
 
   return (
-    <Shell T={T} manual={manual} setManual={setManual} occ={occ} profile={profile} tab={tab} setTab={setTab} notif={notif}>
-      {tab==="home" && <Home T={T} profile={profile} preview={primaryFace} looks={looks} events={events} setTab={setTab}/>}
+    <Shell T={T} manual={manual} setManual={setManual} occ={occ} profile={profile} tab={tab} setTab={setTab} notif={notif} events={events}>
+      {tab==="home" && <Home T={T} profile={profile} preview={primaryFace} looks={looks} events={events} setTab={setTab} scanHistory={scanHistory}/>}
       {tab==="scan" && <Scan T={T} scans={scans} hasFullScan={hasFullScan} primaryFace={primaryFace} startCamera={()=>setScreen("camera")} resetScan={resetScan} glam={glam} setGlam={setGlam} occ={occ} setOcc={setOcc} analyze={analyze} loading={loading}/>}
       {tab==="looks" && <Looks T={T} looks={looks}/>}
-      {tab==="lumi" && <LumiChat T={T} profile={profile} faceAnalysis={result} events={events} addEvent={addEvent} removeEvent={removeEvent} chatMessages={chatMessages} setChatMessages={setChatMessages} notify={notify} setTab={setTab}/>}
-      {tab==="profile" && <Profile T={T} profile={profile} preview={primaryFace} hasFullScan={hasFullScan} startCamera={()=>setScreen("camera")}/>}
+      {tab==="lumi" && <LumiChat T={T} profile={profile} setProfile={setProfile} faceAnalysis={result} events={events} addEvent={addEvent} updateEvent={updateEvent} removeEvent={removeEvent} chatMessages={chatMessages} setChatMessages={setChatMessages} scanHistory={scanHistory} lastScanDate={lastScanDate} lastChatOpenedDate={lastChatOpenedDate} setLastChatOpenedDate={setLastChatOpenedDate} notify={notify} setTab={setTab}/>}
+      {tab==="profile" && <Profile T={T} profile={profile} preview={primaryFace} hasFullScan={hasFullScan} startCamera={()=>setScreen("camera")} scanHistory={scanHistory} events={events}/>}
     </Shell>
   );
 }
 
-// ─── 💬 NEW: LUMI CHAT — AGENTIC BEAUTY ADVISOR ──────────────
-function LumiChat({ T, profile, faceAnalysis, events, addEvent, removeEvent, chatMessages, setChatMessages, notify, setTab }) {
+// ─── 💬 LUMI CHAT — V6 SMARTER + PROACTIVE ──────────────────
+function LumiChat({ T, profile, setProfile, faceAnalysis, events, addEvent, updateEvent, removeEvent, chatMessages, setChatMessages, scanHistory, lastScanDate, lastChatOpenedDate, setLastChatOpenedDate, notify, setTab }) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [showEvents, setShowEvents] = useState(false);
   const messagesEndRef = useRef();
   const inputRef = useRef();
+  const autoGreetingTriggeredRef = useRef(false);
 
-  // Auto-scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages, sending]);
 
-  // Initial greeting if first time
+  // 🌟 PROACTIVE AUTO-GREETING
+  // Triggers when:
+  // - Empty chat history, OR
+  // - More than 4 hours since last open AND there's a relevant context (event coming, stale scan)
   useEffect(() => {
-    if (chatMessages.length === 0) {
-      const greeting = profile.name
-        ? `Hello ${profile.name}! ✨ I'm Lumi, your personal beauty advisor. I can help you plan looks for any occasion, manage your beauty calendar, and give you personalized advice. What's on your mind today?`
-        : `Hello darling! ✨ I'm Lumi, your personal beauty advisor. I can help you plan looks, manage your upcoming events, and give personalized advice. What's coming up for you?`;
-      setChatMessages([{ role: 'assistant', content: greeting, timestamp: Date.now() }]);
+    if (autoGreetingTriggeredRef.current) return;
+    autoGreetingTriggeredRef.current = true;
+
+    const now = Date.now();
+    const hoursSinceLastOpen = lastChatOpenedDate ? (now - lastChatOpenedDate) / (1000*60*60) : Infinity;
+    const hasContext = checkProactiveContext({ events, lastScanDate });
+    const shouldAutoGreet = chatMessages.length === 0 || (hoursSinceLastOpen > 4 && hasContext);
+
+    if (shouldAutoGreet) {
+      generateAutoGreeting();
     }
+    setLastChatOpenedDate(now);
   }, []);
+
+  const generateAutoGreeting = async () => {
+    setSending(true);
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: '[SYSTEM: User just opened Lumi chat. Generate a proactive, context-aware greeting based on their calendar, scan history, and profile completeness. Keep it 1-2 sentences, warm and natural.]' }],
+          profile,
+          faceAnalysis,
+          currentEvents: events,
+          scanHistory,
+          lastScanDate,
+          isAutoGreeting: true
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.text) {
+          setChatMessages(prev => [...prev, { role: 'assistant', content: data.text, timestamp: Date.now(), isProactive: true }]);
+        }
+      }
+    } catch {}
+    setSending(false);
+  };
 
   const sendMessage = async (text) => {
     if (!text.trim() || sending) return;
@@ -199,7 +247,7 @@ function LumiChat({ T, profile, faceAnalysis, events, addEvent, removeEvent, cha
     setSending(true);
 
     try {
-      // Convert chat history to API format (only role + content)
+      // Strip non-API fields when sending
       const apiMessages = updatedMessages.map(m => ({
         role: m.role,
         content: typeof m.content === 'string' ? m.content : m.content
@@ -212,21 +260,26 @@ function LumiChat({ T, profile, faceAnalysis, events, addEvent, removeEvent, cha
           messages: apiMessages,
           profile,
           faceAnalysis,
-          currentEvents: events
+          currentEvents: events,
+          scanHistory,
+          lastScanDate,
+          isAutoGreeting: false
         })
       });
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         notify(err.error || "Lumi is having trouble. Try again.");
-        setSending(false);
-        return;
+        setSending(false); return;
       }
 
       const data = await res.json();
       let assistantText = data.text || "";
       const newEventsAdded = [];
       const eventsRemoved = [];
+      const eventsUpdated = [];
+      const profileUpdates = {};
+      const rescanSuggested = [];
 
       // Process tool calls
       if (data.toolCalls && data.toolCalls.length > 0) {
@@ -241,28 +294,42 @@ function LumiChat({ T, profile, faceAnalysis, events, addEvent, removeEvent, cha
               notes: tc.input.notes || ''
             });
             newEventsAdded.push(newEvt);
+          } else if (tc.name === 'update_event') {
+            const { id, ...updates } = tc.input;
+            updateEvent(id, updates);
+            eventsUpdated.push({ id, updates });
           } else if (tc.name === 'remove_event') {
             removeEvent(tc.input.id);
             eventsRemoved.push(tc.input.id);
-          } else if (tc.name === 'list_events') {
-            // Just acknowledge — Lumi sees current events in system prompt
+          } else if (tc.name === 'update_profile') {
+            const cleaned = Object.fromEntries(Object.entries(tc.input).filter(([_,v]) => v));
+            setProfile(p => ({ ...p, ...cleaned }));
+            Object.assign(profileUpdates, cleaned);
+          } else if (tc.name === 'suggest_rescan') {
+            rescanSuggested.push(tc.input.reason);
+          } else if (tc.name === 'plan_look') {
+            const { eventId, ...lookData } = tc.input;
+            updateEvent(eventId, { plannedLook: lookData });
+            eventsUpdated.push({ id: eventId, updates: { plannedLook: lookData } });
           }
         }
       }
 
-      // Build assistant message with optional event card
       const assistantMsg = {
         role: 'assistant',
         content: assistantText,
         timestamp: Date.now(),
         addedEvents: newEventsAdded.length > 0 ? newEventsAdded : null,
-        removedEvents: eventsRemoved.length > 0 ? eventsRemoved : null
+        rescanSuggested: rescanSuggested.length > 0 ? rescanSuggested : null,
+        profileUpdates: Object.keys(profileUpdates).length > 0 ? profileUpdates : null
       };
       setChatMessages(prev => [...prev, assistantMsg]);
 
-      if (newEventsAdded.length > 0) {
-        notify(`✨ ${newEventsAdded.length} event${newEventsAdded.length>1?'s':''} added to your calendar`);
-      }
+      // User notifications
+      if (newEventsAdded.length > 0) notify(`✨ ${newEventsAdded.length} event${newEventsAdded.length>1?'s':''} added`);
+      else if (eventsUpdated.length > 0) notify(`✨ Event updated`);
+      else if (Object.keys(profileUpdates).length > 0) notify(`✨ Profile updated`);
+      else if (rescanSuggested.length > 0) notify(`💡 Rescan suggested`);
     } catch (e) {
       notify("Network error. Please try again.");
     }
@@ -271,30 +338,21 @@ function LumiChat({ T, profile, faceAnalysis, events, addEvent, removeEvent, cha
   };
 
   const clearChat = () => {
-    if (confirm("Clear chat history? Your events will stay safe.")) {
+    if (confirm("Clear chat history? Your events and profile stay safe.")) {
       setChatMessages([]);
-      setTimeout(() => {
-        const greeting = `Hello ${profile.name || 'darling'}! ✨ How can I help you today?`;
-        setChatMessages([{ role: 'assistant', content: greeting, timestamp: Date.now() }]);
-      }, 100);
+      autoGreetingTriggeredRef.current = false;
+      setTimeout(() => generateAutoGreeting(), 200);
     }
   };
 
-  // Quick action prompts
-  const QUICK_PROMPTS = [
-    "I have a wedding next Saturday",
-    "What's coming up?",
-    "Suggest a look for tonight",
-    "How do I make my eyes pop?",
-  ];
+  // Quick action prompts (smart based on context)
+  const QUICK_PROMPTS = getQuickPrompts({ events, profile, scanHistory });
 
   return (
-    <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 120px)",position:"relative"}}>
-      {/* Header banner */}
+    <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 130px)",position:"relative"}}>
       <div style={{padding:"16px 20px 12px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:12,background:T.bgCard}}>
         <div style={{
-          width:42, height:42, borderRadius:"50%",
-          background: T.btn,
+          width:42, height:42, borderRadius:"50%", background: T.btn,
           display:"flex", alignItems:"center", justifyContent:"center",
           fontSize:18, color:T.btnText, fontWeight:300, fontFamily:FF,
           boxShadow:T.shadowGold
@@ -309,7 +367,6 @@ function LumiChat({ T, profile, faceAnalysis, events, addEvent, removeEvent, cha
         <button onClick={clearChat} style={{background:"transparent",border:"none",color:T.textMuted,fontSize:11,cursor:"pointer",padding:6}}>↻</button>
       </div>
 
-      {/* Events panel (collapsible) */}
       {showEvents && (
         <div style={{background:T.bgDeep,borderBottom:`1px solid ${T.border}`,padding:"12px 16px",maxHeight:240,overflowY:"auto"}}>
           <div style={{fontSize:8,color:T.accent,letterSpacing:3,marginBottom:10}}>📅 BEAUTY CALENDAR</div>
@@ -321,7 +378,6 @@ function LumiChat({ T, profile, faceAnalysis, events, addEvent, removeEvent, cha
         </div>
       )}
 
-      {/* Messages */}
       <div style={{flex:1,overflowY:"auto",padding:"16px 16px 8px",display:"flex",flexDirection:"column",gap:12}}>
         {chatMessages.map((msg, i) => (
           <Message key={i} message={msg} T={T} setTab={setTab}/>
@@ -345,8 +401,7 @@ function LumiChat({ T, profile, faceAnalysis, events, addEvent, removeEvent, cha
         `}</style>
       </div>
 
-      {/* Quick prompts (only show if conversation is fresh) */}
-      {chatMessages.length <= 1 && (
+      {chatMessages.length <= 2 && QUICK_PROMPTS.length > 0 && (
         <div style={{padding:"4px 14px 8px",display:"flex",gap:6,flexWrap:"wrap"}}>
           {QUICK_PROMPTS.map(p => (
             <button key={p} onClick={()=>sendMessage(p)} disabled={sending}
@@ -357,41 +412,59 @@ function LumiChat({ T, profile, faceAnalysis, events, addEvent, removeEvent, cha
         </div>
       )}
 
-      {/* Input */}
       <div style={{padding:"10px 14px 14px",borderTop:`1px solid ${T.border}`,background:T.bg,display:"flex",gap:8,alignItems:"flex-end"}}>
         <textarea
-          ref={inputRef}
-          value={input}
-          onChange={e=>setInput(e.target.value)}
-          onKeyDown={e=>{
-            if (e.key==='Enter' && !e.shiftKey) {
-              e.preventDefault();
-              sendMessage(input);
-            }
-          }}
-          placeholder="Message Lumi..."
-          rows={1}
-          style={{
-            flex:1, background:T.bgCard, border:`1px solid ${T.border}`,
-            color:T.text, fontSize:13, padding:"10px 14px",
-            outline:"none", fontFamily:FF, resize:"none",
-            maxHeight:90, lineHeight:1.5, caretColor:T.accent
-          }}
+          ref={inputRef} value={input} onChange={e=>setInput(e.target.value)}
+          onKeyDown={e=>{ if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input); } }}
+          placeholder="Message Lumi..." rows={1}
+          style={{flex:1, background:T.bgCard, border:`1px solid ${T.border}`, color:T.text, fontSize:13, padding:"10px 14px", outline:"none", fontFamily:FF, resize:"none", maxHeight:90, lineHeight:1.5, caretColor:T.accent}}
         />
-        <button
-          onClick={()=>sendMessage(input)}
-          disabled={!input.trim() || sending}
-          style={{
-            background: input.trim() && !sending ? T.btn : "transparent",
-            color: input.trim() && !sending ? T.btnText : T.textMuted,
-            border: input.trim() && !sending ? "none" : `1px solid ${T.border}`,
-            width:42, height:42, cursor: input.trim() && !sending ? "pointer" : "default",
-            fontSize:16, fontWeight:700, transition:"all 0.2s", flexShrink:0
-          }}
+        <button onClick={()=>sendMessage(input)} disabled={!input.trim() || sending}
+          style={{background: input.trim() && !sending ? T.btn : "transparent", color: input.trim() && !sending ? T.btnText : T.textMuted, border: input.trim() && !sending ? "none" : `1px solid ${T.border}`, width:42, height:42, cursor: input.trim() && !sending ? "pointer" : "default", fontSize:16, fontWeight:700, transition:"all 0.2s", flexShrink:0}}
         >→</button>
       </div>
     </div>
   );
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────
+function checkProactiveContext({ events, lastScanDate }) {
+  const now = new Date();
+  // Has imminent event (next 10 days)?
+  const hasImminentEvent = events.some(e => {
+    const days = Math.ceil((new Date(e.date) - now) / (1000*60*60*24));
+    return days >= 0 && days <= 10;
+  });
+  // Stale scan?
+  const scanIsStale = lastScanDate && (now - new Date(lastScanDate)) / (1000*60*60*24) > 30;
+  return hasImminentEvent || scanIsStale;
+}
+
+function getQuickPrompts({ events, profile, scanHistory }) {
+  const now = new Date();
+  const imminentEvent = events.find(e => {
+    const days = Math.ceil((new Date(e.date) - now) / (1000*60*60*24));
+    return days >= 0 && days <= 10;
+  });
+
+  const prompts = [];
+  if (imminentEvent) {
+    prompts.push(`Plan my ${imminentEvent.title} look`);
+  }
+  if (events.length === 0) {
+    prompts.push("I have a wedding next month");
+  }
+  if (events.length > 0) {
+    prompts.push("What's coming up?");
+  }
+  if (scanHistory.length === 0) {
+    prompts.push("How do I get started?");
+  } else {
+    prompts.push("Suggest a look for tonight");
+  }
+  prompts.push("How do I make my eyes pop?");
+
+  return prompts.slice(0, 4);
 }
 
 // ─── MESSAGE BUBBLE ──────────────────────────────────────────
@@ -404,23 +477,21 @@ function Message({ message, T, setTab }) {
         background: isUser ? T.btn : T.bgCard,
         color: isUser ? T.btnText : T.text,
         border: isUser ? "none" : `1px solid ${T.border}`,
-        padding:"11px 15px",
-        fontSize:13, lineHeight:1.55,
+        padding:"11px 15px", fontSize:13, lineHeight:1.55,
         fontWeight: isUser ? 500 : 400,
         boxShadow: isUser ? T.shadowGold : "none",
-        whiteSpace:"pre-wrap",
-        wordBreak:"break-word"
+        whiteSpace:"pre-wrap", wordBreak:"break-word",
+        position:"relative"
       }}>
+        {message.isProactive && !isUser && (
+          <div style={{position:"absolute",top:-7,left:10,fontSize:7,letterSpacing:3,background:T.accent,color:T.btnText==="#0D1B2A"?"#0D1B2A":"#fff",padding:"2px 7px",fontWeight:700}}>
+            ✨ PROACTIVE
+          </div>
+        )}
         {message.content}
       </div>
-
-      {/* Show event cards when Lumi added events */}
       {message.addedEvents && message.addedEvents.map(e => (
-        <div key={e.id} style={{
-          maxWidth:"82%",
-          background:T.accentDim, border:`1px solid ${T.accentBorder}`,
-          padding:"10px 13px", fontSize:11
-        }}>
+        <div key={e.id} style={{maxWidth:"82%",background:T.accentDim, border:`1px solid ${T.accentBorder}`,padding:"10px 13px", fontSize:11}}>
           <div style={{fontSize:7,letterSpacing:3,color:T.accent,marginBottom:4}}>✨ ADDED TO CALENDAR</div>
           <div style={{color:T.text,fontWeight:500,marginBottom:3}}>{e.title}</div>
           <div style={{color:T.textSub,fontSize:10}}>
@@ -428,26 +499,47 @@ function Message({ message, T, setTab }) {
           </div>
         </div>
       ))}
+      {message.rescanSuggested && (
+        <button onClick={()=>setTab('scan')} style={{maxWidth:"82%",background:T.accentDim, border:`1px solid ${T.accentBorder}`,padding:"10px 13px", fontSize:11, cursor:"pointer", textAlign:"left",fontFamily:FF}}>
+          <div style={{fontSize:7,letterSpacing:3,color:T.accent,marginBottom:4}}>💡 LUMI SUGGESTS</div>
+          <div style={{color:T.text,fontWeight:500,marginBottom:3}}>Refresh your face scan</div>
+          <div style={{color:T.textSub,fontSize:10}}>{message.rescanSuggested[0]} · Tap to start →</div>
+        </button>
+      )}
+      {message.profileUpdates && (
+        <div style={{maxWidth:"82%",background:T.accentDim, border:`1px solid ${T.accentBorder}`,padding:"8px 12px", fontSize:10}}>
+          <div style={{fontSize:7,letterSpacing:3,color:T.accent,marginBottom:3}}>✓ PROFILE UPDATED</div>
+          <div style={{color:T.textSub,fontSize:10}}>{Object.entries(message.profileUpdates).map(([k,v])=>`${k}: ${v}`).join(' · ')}</div>
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── EVENT CARD ──────────────────────────────────────────────
 function EventCard({ event, T, onRemove }) {
   const occInfo = OCCS.find(o => o.id === event.occasion);
   const daysAway = Math.ceil((new Date(event.date) - new Date()) / (1000*60*60*24));
   return (
-    <div style={{display:"flex",alignItems:"center",gap:11,padding:"10px 12px",background:T.bgCard,border:`1px solid ${T.border}`,marginBottom:6}}>
-      <div style={{fontSize:18}}>{occInfo?.icon || "📅"}</div>
-      <div style={{flex:1,minWidth:0}}>
-        <div style={{fontSize:11,color:T.text,marginBottom:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{event.title}</div>
-        <div style={{fontSize:8,color:T.accent,letterSpacing:1}}>
-          {daysAway < 0 ? "PAST" : daysAway === 0 ? "TODAY" : daysAway === 1 ? "TOMORROW" : `IN ${daysAway} DAYS`}
-          {event.time && ` · ${event.time}`}
+    <div style={{background:T.bgCard,border:`1px solid ${T.border}`,marginBottom:6,padding:"10px 12px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:11}}>
+        <div style={{fontSize:18}}>{occInfo?.icon || "📅"}</div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:11,color:T.text,marginBottom:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{event.title}</div>
+          <div style={{fontSize:8,color:T.accent,letterSpacing:1}}>
+            {daysAway < 0 ? "PAST" : daysAway === 0 ? "TODAY" : daysAway === 1 ? "TOMORROW" : `IN ${daysAway} DAYS`}
+            {event.time && ` · ${event.time}`}
+          </div>
+          <div style={{fontSize:7,color:T.textMuted,marginTop:1}}>{formatDate(event.date)} · {event.glam} glam</div>
         </div>
-        <div style={{fontSize:7,color:T.textMuted,marginTop:1}}>{formatDate(event.date)} · {event.glam} glam</div>
+        <button onClick={onRemove} style={{background:"transparent",border:"none",color:T.textMuted,fontSize:14,cursor:"pointer",padding:4}}>×</button>
       </div>
-      <button onClick={onRemove} style={{background:"transparent",border:"none",color:T.textMuted,fontSize:14,cursor:"pointer",padding:4}}>×</button>
+      {(event.dress || event.hair || event.plannedLook) && (
+        <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${T.border}`,fontSize:9,color:T.textSub,lineHeight:1.6}}>
+          {event.dress && <div>👗 <strong style={{color:T.text}}>Dress:</strong> {event.dress}</div>}
+          {event.hair && <div>💁 <strong style={{color:T.text}}>Hair:</strong> {event.hair}</div>}
+          {event.plannedLook?.makeupConcept && <div>💄 <strong style={{color:T.text}}>Look:</strong> {event.plannedLook.makeupConcept}</div>}
+        </div>
+      )}
     </div>
   );
 }
@@ -466,7 +558,6 @@ function TutorialPlayer({ T, result, preview, occ, glam, onClose }) {
   const [progress, setProgress] = useState(0);
   const utteranceRef = useRef(null);
   const progressRef = useRef(null);
-
   const steps = result ? Object.entries(result.tutorial).map(([key, val]) => ({ key, ...val })) : [];
   const currentStep = steps[stepIdx];
   const overlay = currentStep ? STEP_OVERLAYS[currentStep.key] : null;
@@ -476,26 +567,17 @@ function TutorialPlayer({ T, result, preview, occ, glam, onClose }) {
     window.speechSynthesis.cancel();
     const speakStep = () => {
       const voices = window.speechSynthesis.getVoices();
-      const preferred = voices.find(v =>
-        /female|samantha|victoria|karen|moira|tessa|fiona|allison|ava/i.test(v.name) && v.lang.startsWith('en')
-      ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+      const preferred = voices.find(v => /female|samantha|victoria|karen|moira|tessa|fiona|allison|ava/i.test(v.name) && v.lang.startsWith('en')) || voices.find(v => v.lang.startsWith('en')) || voices[0];
       const text = `Step ${stepIdx + 1}. ${currentStep.title}. ${currentStep.instruction}`;
       const utterance = new SpeechSynthesisUtterance(text);
       if (preferred) utterance.voice = preferred;
-      utterance.rate = 0.92;
-      utterance.pitch = 1.05;
-      utterance.volume = 1;
-      utterance.onend = () => {
-        setTimeout(() => {
-          setStepIdx(prev => prev < steps.length - 1 ? prev + 1 : prev);
-        }, 800);
-      };
+      utterance.rate = 0.92; utterance.pitch = 1.05; utterance.volume = 1;
+      utterance.onend = () => { setTimeout(() => { setStepIdx(prev => prev < steps.length - 1 ? prev + 1 : prev); }, 800); };
       utteranceRef.current = utterance;
       window.speechSynthesis.speak(utterance);
     };
-    if (window.speechSynthesis.getVoices().length === 0) {
-      window.speechSynthesis.onvoiceschanged = () => speakStep();
-    } else { speakStep(); }
+    if (window.speechSynthesis.getVoices().length === 0) window.speechSynthesis.onvoiceschanged = () => speakStep();
+    else speakStep();
     return () => { window.speechSynthesis.cancel(); };
   }, [stepIdx, playing]);
 
@@ -512,11 +594,7 @@ function TutorialPlayer({ T, result, preview, occ, glam, onClose }) {
     return () => clearInterval(progressRef.current);
   }, [stepIdx, playing, overlay]);
 
-  const togglePlay = () => {
-    if (playing) window.speechSynthesis.pause();
-    else window.speechSynthesis.resume();
-    setPlaying(!playing);
-  };
+  const togglePlay = () => { if (playing) window.speechSynthesis.pause(); else window.speechSynthesis.resume(); setPlaying(!playing); };
   const goToStep = (i) => { window.speechSynthesis.cancel(); setStepIdx(i); setPlaying(true); };
 
   if (!result || !currentStep) return null;
@@ -534,11 +612,7 @@ function TutorialPlayer({ T, result, preview, occ, glam, onClose }) {
         </div>
         <div style={{display:"flex",gap:5,justifyContent:"center"}}>
           {steps.map((_, i) => (
-            <button key={i} onClick={()=>goToStep(i)} style={{
-              width: i===stepIdx ? 22 : 6, height:4,
-              background: i < stepIdx ? T.accent : i===stepIdx ? "#fff" : "rgba(255,255,255,0.25)",
-              border:"none", padding:0, cursor:"pointer", transition:"all 0.4s"
-            }}/>
+            <button key={i} onClick={()=>goToStep(i)} style={{width: i===stepIdx ? 22 : 6, height:4, background: i < stepIdx ? T.accent : i===stepIdx ? "#fff" : "rgba(255,255,255,0.25)", border:"none", padding:0, cursor:"pointer", transition:"all 0.4s"}}/>
           ))}
         </div>
       </div>
@@ -561,18 +635,11 @@ function TutorialPlayer({ T, result, preview, occ, glam, onClose }) {
           <div style={{fontSize:12,color:"rgba(255,255,255,0.78)",lineHeight:1.7,maxWidth:340,margin:"0 auto"}}>{currentStep.instruction}</div>
         </div>
         <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:24}}>
-          <button onClick={()=>stepIdx > 0 && goToStep(stepIdx-1)} disabled={stepIdx===0}
-            style={{background:"transparent",border:`1px solid rgba(255,255,255,0.25)`,color:"#fff",width:42,height:42,borderRadius:"50%",cursor: stepIdx>0 ? "pointer":"default",fontSize:14,opacity: stepIdx>0 ? 1:0.3}}>←</button>
-          <button onClick={togglePlay} style={{
-            width:64, height:64, borderRadius:"50%",
-            background: T.accent, border:"none", cursor:"pointer",
-            display:"flex", alignItems:"center", justifyContent:"center",
-            boxShadow:T.shadowGold, transition:"all 0.3s"
-          }}>
+          <button onClick={()=>stepIdx > 0 && goToStep(stepIdx-1)} disabled={stepIdx===0} style={{background:"transparent",border:`1px solid rgba(255,255,255,0.25)`,color:"#fff",width:42,height:42,borderRadius:"50%",cursor: stepIdx>0 ? "pointer":"default",fontSize:14,opacity: stepIdx>0 ? 1:0.3}}>←</button>
+          <button onClick={togglePlay} style={{width:64, height:64, borderRadius:"50%", background: T.accent, border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", boxShadow:T.shadowGold, transition:"all 0.3s"}}>
             <span style={{color:"#0D1B2A",fontSize:20}}>{playing ? "❚❚" : "▶"}</span>
           </button>
-          <button onClick={()=>stepIdx < steps.length-1 && goToStep(stepIdx+1)} disabled={stepIdx===steps.length-1}
-            style={{background:"transparent",border:`1px solid rgba(255,255,255,0.25)`,color:"#fff",width:42,height:42,borderRadius:"50%",cursor: stepIdx<steps.length-1 ? "pointer":"default",fontSize:14,opacity: stepIdx<steps.length-1 ? 1:0.3}}>→</button>
+          <button onClick={()=>stepIdx < steps.length-1 && goToStep(stepIdx+1)} disabled={stepIdx===steps.length-1} style={{background:"transparent",border:`1px solid rgba(255,255,255,0.25)`,color:"#fff",width:42,height:42,borderRadius:"50%",cursor: stepIdx<steps.length-1 ? "pointer":"default",fontSize:14,opacity: stepIdx<steps.length-1 ? 1:0.3}}>→</button>
         </div>
         <div style={{textAlign:"center",marginTop:14,fontSize:8,color:"rgba(255,255,255,0.4)",letterSpacing:2}}>
           {playing ? "🔊 PLAYING · AUTO-ADVANCING" : "⏸ PAUSED · TAP PLAY TO RESUME"}
@@ -587,39 +654,25 @@ function FaceOverlay({ overlay, stepIdx, progress, accent }) {
   const opacity = Math.min(progress / 100, 0.85);
   return (
     <div style={{position:"absolute",inset:0,pointerEvents:"none"}}>
-      {overlay.zone === "all" && (
-        <div style={{position:"absolute", inset:0, background: overlay.color, opacity: opacity * 0.7, mixBlendMode:"multiply", transition:"opacity 0.5s ease"}}/>
-      )}
-      {overlay.zone === "sides" && (
-        <>
-          <div style={{position:"absolute", top:"32%", left:"12%", width:"18%", height:"40%", background:`linear-gradient(135deg, transparent, ${overlay.color}, transparent)`, opacity: opacity, mixBlendMode:"multiply", transform:"rotate(-15deg)", filter:"blur(20px)", transition:"opacity 0.5s ease"}}/>
-          <div style={{position:"absolute", top:"32%", right:"12%", width:"18%", height:"40%", background:`linear-gradient(-135deg, transparent, ${overlay.color}, transparent)`, opacity: opacity, mixBlendMode:"multiply", transform:"rotate(15deg)", filter:"blur(20px)", transition:"opacity 0.5s ease"}}/>
-        </>
-      )}
-      {overlay.zone === "cheeks" && (
-        <>
-          <div style={{position:"absolute", top:"45%", left:"20%", width:"22%", height:"22%", background: `radial-gradient(circle, ${overlay.color} 0%, transparent 70%)`, opacity: opacity, mixBlendMode:"multiply", animation:"pulse 2s ease-in-out infinite", transition:"opacity 0.5s ease"}}/>
-          <div style={{position:"absolute", top:"45%", right:"20%", width:"22%", height:"22%", background: `radial-gradient(circle, ${overlay.color} 0%, transparent 70%)`, opacity: opacity, mixBlendMode:"multiply", animation:"pulse 2s ease-in-out infinite", transition:"opacity 0.5s ease"}}/>
-        </>
-      )}
-      {overlay.zone === "eyes" && (
-        <>
-          <div style={{position:"absolute", top:"32%", left:"22%", width:"20%", height:"10%", background: overlay.color, opacity: opacity * 0.9, mixBlendMode:"multiply", borderRadius:"50%", filter:"blur(8px)", transition:"opacity 0.5s ease"}}/>
-          <div style={{position:"absolute", top:"32%", right:"22%", width:"20%", height:"10%", background: overlay.color, opacity: opacity * 0.9, mixBlendMode:"multiply", borderRadius:"50%", filter:"blur(8px)", transition:"opacity 0.5s ease"}}/>
-        </>
-      )}
-      {overlay.zone === "brows" && (
-        <>
-          <div style={{position:"absolute", top:"28%", left:"22%", width:"18%", height:"3%", background: overlay.color, opacity: opacity, mixBlendMode:"multiply", borderRadius:"50%", filter:"blur(4px)", transition:"opacity 0.5s ease"}}/>
-          <div style={{position:"absolute", top:"28%", right:"22%", width:"18%", height:"3%", background: overlay.color, opacity: opacity, mixBlendMode:"multiply", borderRadius:"50%", filter:"blur(4px)", transition:"opacity 0.5s ease"}}/>
-        </>
-      )}
-      {overlay.zone === "lips" && (
-        <div style={{position:"absolute", top:"66%", left:"36%", width:"28%", height:"7%", background: overlay.color, opacity: opacity * 0.95, mixBlendMode:"multiply", borderRadius:"50%", filter:"blur(6px)", transition:"opacity 0.5s ease"}}/>
-      )}
-      <style>{`
-        @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
-      `}</style>
+      {overlay.zone === "all" && <div style={{position:"absolute", inset:0, background: overlay.color, opacity: opacity * 0.7, mixBlendMode:"multiply", transition:"opacity 0.5s ease"}}/>}
+      {overlay.zone === "sides" && (<>
+        <div style={{position:"absolute", top:"32%", left:"12%", width:"18%", height:"40%", background:`linear-gradient(135deg, transparent, ${overlay.color}, transparent)`, opacity: opacity, mixBlendMode:"multiply", transform:"rotate(-15deg)", filter:"blur(20px)", transition:"opacity 0.5s ease"}}/>
+        <div style={{position:"absolute", top:"32%", right:"12%", width:"18%", height:"40%", background:`linear-gradient(-135deg, transparent, ${overlay.color}, transparent)`, opacity: opacity, mixBlendMode:"multiply", transform:"rotate(15deg)", filter:"blur(20px)", transition:"opacity 0.5s ease"}}/>
+      </>)}
+      {overlay.zone === "cheeks" && (<>
+        <div style={{position:"absolute", top:"45%", left:"20%", width:"22%", height:"22%", background: `radial-gradient(circle, ${overlay.color} 0%, transparent 70%)`, opacity: opacity, mixBlendMode:"multiply", animation:"pulse 2s ease-in-out infinite", transition:"opacity 0.5s ease"}}/>
+        <div style={{position:"absolute", top:"45%", right:"20%", width:"22%", height:"22%", background: `radial-gradient(circle, ${overlay.color} 0%, transparent 70%)`, opacity: opacity, mixBlendMode:"multiply", animation:"pulse 2s ease-in-out infinite", transition:"opacity 0.5s ease"}}/>
+      </>)}
+      {overlay.zone === "eyes" && (<>
+        <div style={{position:"absolute", top:"32%", left:"22%", width:"20%", height:"10%", background: overlay.color, opacity: opacity * 0.9, mixBlendMode:"multiply", borderRadius:"50%", filter:"blur(8px)", transition:"opacity 0.5s ease"}}/>
+        <div style={{position:"absolute", top:"32%", right:"22%", width:"20%", height:"10%", background: overlay.color, opacity: opacity * 0.9, mixBlendMode:"multiply", borderRadius:"50%", filter:"blur(8px)", transition:"opacity 0.5s ease"}}/>
+      </>)}
+      {overlay.zone === "brows" && (<>
+        <div style={{position:"absolute", top:"28%", left:"22%", width:"18%", height:"3%", background: overlay.color, opacity: opacity, mixBlendMode:"multiply", borderRadius:"50%", filter:"blur(4px)", transition:"opacity 0.5s ease"}}/>
+        <div style={{position:"absolute", top:"28%", right:"22%", width:"18%", height:"3%", background: overlay.color, opacity: opacity, mixBlendMode:"multiply", borderRadius:"50%", filter:"blur(4px)", transition:"opacity 0.5s ease"}}/>
+      </>)}
+      {overlay.zone === "lips" && <div style={{position:"absolute", top:"66%", left:"36%", width:"28%", height:"7%", background: overlay.color, opacity: opacity * 0.95, mixBlendMode:"multiply", borderRadius:"50%", filter:"blur(6px)", transition:"opacity 0.5s ease"}}/>}
+      <style>{`@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }`}</style>
     </div>
   );
 }
@@ -634,7 +687,6 @@ function CameraScan({ T, scans, setScans, onDone, onCancel, notify }) {
   const [capturing, setCapturing] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [error, setError] = useState(null);
-
   const angle = SCAN_ANGLES[angleIdx];
   const captured = scans[angle?.id];
   const allDone = angleIdx >= SCAN_ANGLES.length;
@@ -643,35 +695,25 @@ function CameraScan({ T, scans, setScans, onDone, onCancel, notify }) {
     let mounted = true;
     (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 1280 } },
-          audio: false
-        });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 1280 } }, audio: false });
         if (!mounted) { stream.getTracks().forEach(t=>t.stop()); return; }
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           videoRef.current.onloadedmetadata = () => setCameraReady(true);
         }
-      } catch (e) {
-        setError("Camera access denied. Please allow camera access in your browser settings and refresh.");
-      }
+      } catch (e) { setError("Camera access denied. Please allow camera access in your browser settings and refresh."); }
     })();
-    return () => {
-      mounted = false;
-      streamRef.current?.getTracks().forEach(t => t.stop());
-    };
+    return () => { mounted = false; streamRef.current?.getTracks().forEach(t => t.stop()); };
   }, []);
 
   const capturePhoto = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return null;
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
+    const video = videoRef.current; const canvas = canvasRef.current;
     const size = Math.min(video.videoWidth, video.videoHeight);
     canvas.width = size; canvas.height = size;
     const ctx = canvas.getContext("2d");
-    const sx = (video.videoWidth - size) / 2;
-    const sy = (video.videoHeight - size) / 2;
+    const sx = (video.videoWidth - size) / 2; const sy = (video.videoHeight - size) / 2;
     ctx.translate(size, 0); ctx.scale(-1, 1);
     ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size);
     return canvas.toDataURL("image/jpeg", 0.9);
@@ -679,32 +721,23 @@ function CameraScan({ T, scans, setScans, onDone, onCancel, notify }) {
 
   const handleCapture = useCallback(() => {
     if (!cameraReady || capturing || allDone) return;
-    setCapturing(true);
-    setCountdown(3);
+    setCapturing(true); setCountdown(3);
     let n = 3;
     const interval = setInterval(() => {
       n--;
       if (n > 0) setCountdown(n);
       else {
-        clearInterval(interval);
-        setCountdown(null);
+        clearInterval(interval); setCountdown(null);
         const photo = capturePhoto();
         if (photo) {
           setScans(prev => ({ ...prev, [angle.id]: photo }));
-          setTimeout(() => {
-            setCapturing(false);
-            if (angleIdx < SCAN_ANGLES.length - 1) setAngleIdx(i => i + 1);
-          }, 600);
-        } else { setCapturing(false); }
+          setTimeout(() => { setCapturing(false); if (angleIdx < SCAN_ANGLES.length - 1) setAngleIdx(i => i + 1); }, 600);
+        } else setCapturing(false);
       }
     }, 1000);
   }, [cameraReady, capturing, allDone, angleIdx, angle, capturePhoto, setScans]);
 
-  const finishScan = () => {
-    streamRef.current?.getTracks().forEach(t => t.stop());
-    notify("✨ Face scan complete!");
-    onDone();
-  };
+  const finishScan = () => { streamRef.current?.getTracks().forEach(t => t.stop()); notify("✨ Face scan complete!"); onDone(); };
 
   if (error) return (
     <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:30,fontFamily:FF,maxWidth:480,margin:"0 auto"}}>
@@ -748,37 +781,17 @@ function CameraScan({ T, scans, setScans, onDone, onCancel, notify }) {
         </div>
         <div style={{display:"flex",gap:5,justifyContent:"center"}}>
           {SCAN_ANGLES.map((a, i) => (
-            <div key={a.id} style={{
-              width: i===angleIdx ? 20 : 6, height:4,
-              background: scans[a.id] ? T.accent : i===angleIdx ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.25)",
-              transition:"all 0.3s"
-            }}/>
+            <div key={a.id} style={{width: i===angleIdx ? 20 : 6, height:4, background: scans[a.id] ? T.accent : i===angleIdx ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.25)", transition:"all 0.3s"}}/>
           ))}
         </div>
       </div>
       <div style={{position:"relative",height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#000"}}>
         <video ref={videoRef} autoPlay playsInline muted style={{width:"100%",height:"100%",objectFit:"cover",transform:"scaleX(-1)"}}/>
         <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
-          <div style={{
-            width:280, height:340, borderRadius:"50%",
-            border: capturing ? `3px solid ${T.accent}` : `2px dashed rgba(255,255,255,0.45)`,
-            boxShadow: capturing ? `0 0 60px ${T.accent}` : "0 0 200px rgba(0,0,0,0.7) inset",
-            transition:"all 0.3s"
-          }}/>
+          <div style={{width:280, height:340, borderRadius:"50%", border: capturing ? `3px solid ${T.accent}` : `2px dashed rgba(255,255,255,0.45)`, boxShadow: capturing ? `0 0 60px ${T.accent}` : "0 0 200px rgba(0,0,0,0.7) inset", transition:"all 0.3s"}}/>
         </div>
-        {countdown && (
-          <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
-            <div style={{fontSize:120,color:T.accent,fontWeight:300,textShadow:"0 0 30px rgba(0,0,0,0.8)"}}>{countdown}</div>
-          </div>
-        )}
-        {!cameraReady && (
-          <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.85)"}}>
-            <div style={{textAlign:"center"}}>
-              <div style={{fontSize:32,color:T.accent,marginBottom:12}}>◉</div>
-              <div style={{fontSize:11,letterSpacing:3,color:"#fff"}}>STARTING CAMERA...</div>
-            </div>
-          </div>
-        )}
+        {countdown && <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}><div style={{fontSize:120,color:T.accent,fontWeight:300,textShadow:"0 0 30px rgba(0,0,0,0.8)"}}>{countdown}</div></div>}
+        {!cameraReady && <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.85)"}}><div style={{textAlign:"center"}}><div style={{fontSize:32,color:T.accent,marginBottom:12}}>◉</div><div style={{fontSize:11,letterSpacing:3,color:"#fff"}}>STARTING CAMERA...</div></div></div>}
       </div>
       <div style={{position:"absolute",bottom:0,left:0,right:0,zIndex:10,background:"linear-gradient(to top,rgba(0,0,0,0.92) 40%,transparent)",padding:"40px 20px 26px"}}>
         <div style={{textAlign:"center",marginBottom:20}}>
@@ -789,15 +802,7 @@ function CameraScan({ T, scans, setScans, onDone, onCancel, notify }) {
         </div>
         <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:30}}>
           <button style={{background:"transparent",border:`1px solid rgba(255,255,255,0.25)`,color:"#fff",width:46,height:46,borderRadius:"50%",cursor: angleIdx>0 ? "pointer":"default",fontSize:14,opacity: angleIdx>0 ? 1:0.3}} onClick={() => angleIdx>0 && setAngleIdx(i=>i-1)} disabled={angleIdx===0}>←</button>
-          <button style={{
-            width:78, height:78, borderRadius:"50%",
-            background: capturing ? T.accent : "transparent",
-            border: `4px solid ${capturing ? T.accent : "#fff"}`,
-            cursor: cameraReady && !capturing ? "pointer" : "default",
-            transition:"all 0.3s",
-            position:"relative",
-            opacity: cameraReady ? 1 : 0.4
-          }} onClick={handleCapture} disabled={!cameraReady || capturing}>
+          <button style={{width:78, height:78, borderRadius:"50%", background: capturing ? T.accent : "transparent", border: `4px solid ${capturing ? T.accent : "#fff"}`, cursor: cameraReady && !capturing ? "pointer" : "default", transition:"all 0.3s", position:"relative", opacity: cameraReady ? 1 : 0.4}} onClick={handleCapture} disabled={!cameraReady || capturing}>
             <div style={{position:"absolute",inset:6,borderRadius:"50%",background: capturing ? T.accent : "#fff", transition:"all 0.3s"}}/>
           </button>
           <button style={{background:"transparent",border:`1px solid rgba(255,255,255,0.25)`,color:"#fff",width:46,height:46,borderRadius:"50%",cursor:"pointer",fontSize:14}} onClick={() => { if (angleIdx < SCAN_ANGLES.length-1) setAngleIdx(i=>i+1); }}>→</button>
@@ -810,13 +815,21 @@ function CameraScan({ T, scans, setScans, onDone, onCancel, notify }) {
   );
 }
 
-// ─── SHELL (5 TABS) ──────────────────────────────────────────
-function Shell({T, manual, setManual, occ, profile, tab, setTab, notif, children}) {
+// ─── SHELL ───────────────────────────────────────────────────
+function Shell({T, manual, setManual, occ, profile, tab, setTab, notif, events, children}) {
+  // Calculate Lumi badge: imminent events or stale scan
+  const now = new Date();
+  const hasImminentEvent = events?.some(e => {
+    const days = Math.ceil((new Date(e.date) - now) / (1000*60*60*24));
+    return days >= 0 && days <= 3;
+  });
+  const lumiHasNews = hasImminentEvent;
+
   const NAV = [
     {id:"home",icon:"⌂",label:"Home"},
     {id:"scan",icon:"◈",label:"Scan"},
     {id:"looks",icon:"♡",label:"Saved"},
-    {id:"lumi",icon:"L",label:"Lumi", special:true},
+    {id:"lumi",icon:"L",label:"Lumi", special:true, badge: lumiHasNews},
     {id:"profile",icon:"◉",label:"Profile"}
   ];
   return (
@@ -838,17 +851,22 @@ function Shell({T, manual, setManual, occ, profile, tab, setTab, notif, children
         {NAV.map(n=>(
           <button key={n.id} style={{flex:1,background:"transparent",border:"none",color:tab===n.id?T.accent:T.textMuted,padding:"10px 0 14px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,transition:"color 0.2s",position:"relative"}} onClick={()=>setTab(n.id)}>
             {n.special ? (
-              <div style={{
-                width:26, height:26, borderRadius:"50%",
-                background: tab===n.id ? T.btn : T.accentDim,
-                color: tab===n.id ? T.btnText : T.accent,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:13, fontWeight:300, fontFamily:FF,
-                border: `1px solid ${tab===n.id ? "transparent" : T.accentBorder}`,
-                boxShadow: tab===n.id ? T.shadowGold : "none",
-                transition:"all 0.2s",
-                marginBottom:1
-              }}>{n.icon}</div>
+              <div style={{position:"relative"}}>
+                <div style={{
+                  width:26, height:26, borderRadius:"50%",
+                  background: tab===n.id ? T.btn : T.accentDim,
+                  color: tab===n.id ? T.btnText : T.accent,
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  fontSize:13, fontWeight:300, fontFamily:FF,
+                  border: `1px solid ${tab===n.id ? "transparent" : T.accentBorder}`,
+                  boxShadow: tab===n.id ? T.shadowGold : "none",
+                  transition:"all 0.2s",
+                  marginBottom:1
+                }}>{n.icon}</div>
+                {n.badge && tab !== n.id && (
+                  <div style={{position:"absolute",top:-2,right:-2,width:8,height:8,borderRadius:"50%",background:"#FF4D4D",border:`1.5px solid ${T.bg}`,animation:"pulseBadge 2s infinite"}}/>
+                )}
+              </div>
             ) : (
               <span style={{fontSize:17}}>{n.icon}</span>
             )}
@@ -856,6 +874,7 @@ function Shell({T, manual, setManual, occ, profile, tab, setTab, notif, children
           </button>
         ))}
       </div>
+      <style>{`@keyframes pulseBadge { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.3); opacity: 0.7; } }`}</style>
     </div>
   );
 }
@@ -874,7 +893,7 @@ function Splash({T, go}) {
         <div style={{fontSize:52,fontWeight:300,color:T.text,letterSpacing:14,marginBottom:4,lineHeight:1}}>LUMIÈRE</div>
         <div style={{fontSize:8,letterSpacing:8,color:T.accent,marginBottom:54}}>AI BEAUTY COMPANION</div>
         <div style={{fontSize:26,fontWeight:300,color:T.text,lineHeight:1.5,marginBottom:20,letterSpacing:1}}>Your face.<br/>Your tutorial.<br/><span style={{color:T.accent}}>Your glow.</span></div>
-        <div style={{fontSize:13,color:T.textMuted,lineHeight:1.8,marginBottom:52,maxWidth:280}}>Personalized AI makeup tutorials with voice guidance — and your own beauty advisor, Lumi. ✨</div>
+        <div style={{fontSize:13,color:T.textMuted,lineHeight:1.8,marginBottom:52,maxWidth:280}}>Personalized AI makeup tutorials with voice guidance — and your own beauty advisor, Lumi, who lives a step ahead. ✨</div>
         <button style={{background:T.btn,color:T.btnText,border:"none",padding:"18px 48px",fontSize:10,letterSpacing:5,fontWeight:700,cursor:"pointer",width:"100%",maxWidth:320,marginBottom:22,boxShadow:T.shadowGold}} onClick={go}>BEGIN YOUR JOURNEY</button>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{height:1,width:20,background:T.accentBorder}}/><span style={{fontSize:8,color:T.textMuted,letterSpacing:3}}>POWERED BY AI</span><div style={{height:1,width:20,background:T.accentBorder}}/>
@@ -884,7 +903,6 @@ function Splash({T, go}) {
   );
 }
 
-// ─── ONBOARD ─────────────────────────────────────────────────
 function Onboard({T, profile, setProfile, step, setStep, done}) {
   const STEPS = [
     {q:"What's your name?", f:"name", type:"text", ph:"Your first name"},
@@ -923,10 +941,15 @@ function Onboard({T, profile, setProfile, step, setStep, done}) {
   );
 }
 
-// ─── HOME (now with upcoming events) ─────────────────────────
-function Home({T, profile, preview, looks, events, setTab}) {
-  const upcomingEvents = events.filter(e => new Date(e.date) >= new Date(new Date().toDateString())).slice(0, 2);
-  const tips = ["Update your face scan after weight changes for better accuracy ◆","Try chatting with Lumi — your personal beauty advisor 💬","Day occasions reveal Pearl Morning — warm ivory and espresso ☀️","Save your looks to recreate them before every big occasion 💄"];
+// ─── HOME (with smart upcoming events + scan freshness) ──────
+function Home({T, profile, preview, looks, events, setTab, scanHistory}) {
+  const now = new Date();
+  const upcomingEvents = events.filter(e => new Date(e.date) >= new Date(now.toDateString())).slice(0, 2);
+  const lastScanDate = scanHistory && scanHistory[0]?.date;
+  const daysSinceLastScan = lastScanDate ? Math.floor((now - new Date(lastScanDate)) / (1000*60*60*24)) : null;
+  const scanIsStale = daysSinceLastScan !== null && daysSinceLastScan > 30;
+  const tips = ["Update your face scan after weight changes for better accuracy ◆","Lumi remembers everything — try planning a wedding 10 days ahead 💬","Day occasions reveal Pearl Morning — warm ivory and espresso ☀️","Save your looks to recreate them before every big occasion 💄"];
+
   return (
     <div style={{padding:"24px 20px"}}>
       <div style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:20,marginBottom:20,display:"flex",gap:16,alignItems:"center",boxShadow:T.shadow}}>
@@ -944,7 +967,18 @@ function Home({T, profile, preview, looks, events, setTab}) {
         </div>
       </div>
 
-      {/* NEW: Upcoming events */}
+      {/* Stale scan warning */}
+      {scanIsStale && (
+        <button onClick={()=>setTab("scan")} style={{width:"100%",background:T.accentDim,border:`1px solid ${T.accent}`,padding:"12px 14px",marginBottom:18,display:"flex",gap:10,alignItems:"center",cursor:"pointer",fontFamily:FF,textAlign:"left"}}>
+          <div style={{fontSize:18}}>💡</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:9,letterSpacing:2,color:T.accent,marginBottom:2}}>SCAN REFRESH SUGGESTED</div>
+            <div style={{fontSize:10,color:T.textSub}}>Last scan was {daysSinceLastScan} days ago. Skin and features change — refresh for accuracy.</div>
+          </div>
+          <div style={{fontSize:14,color:T.accent}}>→</div>
+        </button>
+      )}
+
       {upcomingEvents.length > 0 && (
         <>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:9}}>
@@ -953,18 +987,19 @@ function Home({T, profile, preview, looks, events, setTab}) {
           </div>
           {upcomingEvents.map(e => {
             const occInfo = OCCS.find(o => o.id === e.occasion);
-            const daysAway = Math.ceil((new Date(e.date) - new Date()) / (1000*60*60*24));
+            const daysAway = Math.ceil((new Date(e.date) - now) / (1000*60*60*24));
             return (
-              <div key={e.id} style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:"12px 14px",marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
+              <button key={e.id} onClick={()=>setTab("lumi")} style={{width:"100%",background:T.bgCard,border:`1px solid ${T.border}`,padding:"12px 14px",marginBottom:8,display:"flex",alignItems:"center",gap:12,cursor:"pointer",fontFamily:FF,textAlign:"left"}}>
                 <div style={{fontSize:20}}>{occInfo?.icon}</div>
                 <div style={{flex:1}}>
                   <div style={{fontSize:12,color:T.text,marginBottom:2}}>{e.title}</div>
                   <div style={{fontSize:8,color:T.accent,letterSpacing:2}}>
                     {daysAway === 0 ? "TODAY" : daysAway === 1 ? "TOMORROW" : `IN ${daysAway} DAYS`} · {e.glam.toUpperCase()} GLAM
                   </div>
+                  {(e.dress || e.hair) && <div style={{fontSize:7,color:T.textMuted,marginTop:2}}>{e.dress?'👗 '+e.dress.slice(0,20):'No dress yet'}{e.hair?' · 💁 '+e.hair.slice(0,15):''}</div>}
                 </div>
                 <div style={{fontSize:7,color:T.textMuted}}>{formatDate(e.date)}</div>
-              </div>
+              </button>
             );
           })}
           <div style={{marginBottom:20}}/>
@@ -972,16 +1007,11 @@ function Home({T, profile, preview, looks, events, setTab}) {
       )}
 
       <div style={{background:T.accentDim,border:`1px solid ${T.accentBorder}`,padding:"13px 15px",marginBottom:20,display:"flex",gap:12,alignItems:"flex-start"}}>
-        <div style={{
-          width:34,height:34,borderRadius:"50%",background:T.btn,color:T.btnText,
-          display:"flex",alignItems:"center",justifyContent:"center",
-          fontSize:14,fontWeight:300,fontFamily:FF,flexShrink:0,
-          boxShadow:T.shadowGold
-        }}>L</div>
+        <div style={{width:34,height:34,borderRadius:"50%",background:T.btn,color:T.btnText,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:300,fontFamily:FF,flexShrink:0,boxShadow:T.shadowGold}}>L</div>
         <div style={{flex:1}}>
-          <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:3}}>NEW · MEET LUMI ✨</div>
-          <div style={{fontSize:11,color:T.textSub,lineHeight:1.65,marginBottom:8}}>Your personal AI beauty advisor. Chat about looks, manage your beauty calendar, get expert tips.</div>
-          <button onClick={()=>setTab("lumi")} style={{background:"transparent",border:`1px solid ${T.accent}`,color:T.accent,fontSize:8,letterSpacing:3,padding:"6px 12px",cursor:"pointer",fontFamily:FF}}>START CHATTING →</button>
+          <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:3}}>LUMI ✨ — A STEP AHEAD</div>
+          <div style={{fontSize:11,color:T.textSub,lineHeight:1.65,marginBottom:8}}>Plan looks 10 days in advance. Lumi remembers your dress, hair, and makeup decisions and reminds you when events approach.</div>
+          <button onClick={()=>setTab("lumi")} style={{background:"transparent",border:`1px solid ${T.accent}`,color:T.accent,fontSize:8,letterSpacing:3,padding:"6px 12px",cursor:"pointer",fontFamily:FF}}>CHAT WITH LUMI →</button>
         </div>
       </div>
 
@@ -1052,9 +1082,7 @@ function Scan({T, scans, hasFullScan, primaryFace, startCamera, resetScan, glam,
           <div style={{fontSize:36,color:T.accent,opacity:0.7}}>📷</div>
           <div style={{fontSize:11,letterSpacing:3,color:T.text}}>START 5-ANGLE FACE SCAN</div>
           <div style={{fontSize:9,color:T.textMuted,letterSpacing:1,textAlign:"center",lineHeight:1.5,maxWidth:240}}>Front · Left · Right · Up · Down<br/>Full 360° AI analysis for perfect makeup</div>
-          {Object.keys(scans).length > 0 && (
-            <div style={{fontSize:8,color:T.accent,letterSpacing:2,marginTop:4}}>{Object.keys(scans).length} OF 5 CAPTURED · TAP TO CONTINUE</div>
-          )}
+          {Object.keys(scans).length > 0 && <div style={{fontSize:8,color:T.accent,letterSpacing:2,marginTop:4}}>{Object.keys(scans).length} OF 5 CAPTURED · TAP TO CONTINUE</div>}
         </button>
       ) : (
         <div style={{background:T.bgCard,border:`1px solid ${T.accentBorder}`,padding:14}}>
@@ -1120,7 +1148,6 @@ function Scan({T, scans, hasFullScan, primaryFace, startCamera, resetScan, glam,
   );
 }
 
-// ─── RESULTS ─────────────────────────────────────────────────
 function Results({T, result, preview, occ, glam, onSave, onBack, onNew, onPlay}) {
   const [step, setStep] = useState(0);
   if (!result) return null;
@@ -1216,7 +1243,8 @@ function Looks({T, looks}) {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:11}}>
         {looks.map(l=>(
           <div key={l.id} style={{position:"relative",overflow:"hidden",aspectRatio:"3/4",background:T.bgCard,border:`1px solid ${T.border}`}}>
-            {l.preview && <img src={l.preview} style={{width:"100%",height:"100%",objectFit:"cover"}} alt={l.lookName}/>}
+            {l.preview && <img src={l.preview} style={{width:"100%",height:"100%",objectFit:"cover"}} alt={l.lookName}/>
+            }
             <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,0.88) 0%,transparent 55%)",display:"flex",flexDirection:"column",justifyContent:"flex-end",padding:11}}>
               <div style={{fontSize:10,marginBottom:3}}>{l.dk==="dark"?"🌙":"☀️"}</div>
               <div style={{fontSize:11,color:"#fff",marginBottom:2}}>{l.lookName}</div>
@@ -1230,7 +1258,10 @@ function Looks({T, looks}) {
   );
 }
 
-function Profile({T, profile, preview, hasFullScan, startCamera}) {
+// ─── PROFILE (with scan history!) ────────────────────────────
+function Profile({T, profile, preview, hasFullScan, startCamera, scanHistory, events}) {
+  const lastScanDate = scanHistory && scanHistory[0]?.date;
+  const daysSinceLastScan = lastScanDate ? Math.floor((new Date() - new Date(lastScanDate)) / (1000*60*60*24)) : null;
   return (
     <div style={{padding:"24px 20px"}}>
       <div style={{fontSize:17,fontWeight:300,color:T.text,letterSpacing:3,marginBottom:18}}>MY PROFILE</div>
@@ -1255,6 +1286,23 @@ function Profile({T, profile, preview, hasFullScan, startCamera}) {
           </div>
         </div>
       </div>
+
+      {/* Stats: scans, events, looks */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:18}}>
+        <div style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:"12px 8px",textAlign:"center"}}>
+          <div style={{fontSize:18,color:T.accent,fontWeight:300}}>{scanHistory?.length || 0}</div>
+          <div style={{fontSize:7,color:T.textMuted,letterSpacing:2,marginTop:2}}>SCANS</div>
+        </div>
+        <div style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:"12px 8px",textAlign:"center"}}>
+          <div style={{fontSize:18,color:T.accent,fontWeight:300}}>{events?.length || 0}</div>
+          <div style={{fontSize:7,color:T.textMuted,letterSpacing:2,marginTop:2}}>EVENTS</div>
+        </div>
+        <div style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:"12px 8px",textAlign:"center"}}>
+          <div style={{fontSize:18,color:T.accent,fontWeight:300}}>{daysSinceLastScan !== null ? daysSinceLastScan + 'd' : '—'}</div>
+          <div style={{fontSize:7,color:T.textMuted,letterSpacing:2,marginTop:2}}>SINCE SCAN</div>
+        </div>
+      </div>
+
       <div style={{background:T.bgCard,border:`1px solid ${T.border}`,marginBottom:18}}>
         {[["Age Range",profile.age],["Skin Type",profile.skinType],["Skin Tone",profile.skinTone],["Face Scan",hasFullScan?"5 angles · Complete":"Not yet scanned"]].map(([l,v],i,arr)=>(
           <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"13px 15px",borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
@@ -1263,6 +1311,32 @@ function Profile({T, profile, preview, hasFullScan, startCamera}) {
           </div>
         ))}
       </div>
+
+      {/* Scan history timeline */}
+      {scanHistory && scanHistory.length > 0 && (
+        <>
+          <div style={{fontSize:8,letterSpacing:4,color:T.accent,marginBottom:9}}>SCAN HISTORY</div>
+          <div style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:"4px 0",marginBottom:18,maxHeight:240,overflowY:"auto"}}>
+            {scanHistory.map((s, i) => {
+              const date = new Date(s.date);
+              const daysAgo = Math.floor((new Date() - date) / (1000*60*60*24));
+              return (
+                <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom: i < scanHistory.length-1 ? `1px solid ${T.border}` : "none"}}>
+                  {s.primaryFace && <img src={s.primaryFace} style={{width:36,height:44,objectFit:"cover",border:`1px solid ${T.border}`}}/>}
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:10,color:T.text,marginBottom:2}}>{i === 0 ? "Latest scan" : `Scan #${scanHistory.length - i}`}</div>
+                    <div style={{fontSize:8,color:T.textMuted,letterSpacing:1}}>
+                      {daysAgo === 0 ? "Today" : daysAgo === 1 ? "Yesterday" : `${daysAgo} days ago`} · {date.toLocaleDateString()}
+                    </div>
+                  </div>
+                  <div style={{fontSize:7,color:T.accent,textTransform:"capitalize"}}>{s.analysis?.faceShape}</div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
       <button style={{width:"100%",background:hasFullScan?"transparent":T.btn,color:hasFullScan?T.text:T.btnText,border:hasFullScan?`1px solid ${T.borderHi}`:"none",padding:"14px",fontSize:9,letterSpacing:4,cursor:"pointer",marginBottom:7,fontFamily:FF,fontWeight:hasFullScan?400:700}} onClick={startCamera}>
         {hasFullScan ? "◈ UPDATE FACE SCAN" : "📷 START FACE SCAN"}
       </button>
