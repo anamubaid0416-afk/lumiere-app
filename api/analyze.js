@@ -112,7 +112,7 @@ Analyze all uploaded facial angles together and create a precise structured Face
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-latest",
+        model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
         max_tokens: 4000,
         temperature: 0.4,
         system: systemPrompt,
