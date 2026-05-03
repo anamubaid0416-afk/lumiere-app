@@ -282,7 +282,8 @@ export default function Lumiere() {
       console.log("API RESPONSE:", data);
 
       if (!res.ok) {
-        notify(data.error || "Analysis failed. Please try again.");
+        console.error("API ERROR:", data);
+        notify("Analysis failed. Please check Vercel logs.");
         setLoading(false);
         return;
       }
