@@ -143,6 +143,43 @@ const SKIN_TONE_TIPS = {
   Deep: "Rich berry, gold, copper, chocolate, plum, and warm red shades will look stunning.",
 };
 
+
+// ─── FACE DNA ENGINE ──────────────────────────────────────────
+const FACE_DNA_OUTCOMES = [
+  { id: "natural", title: "Natural Enhancement", icon: "🌿", purpose: "Enhance the face without changing the natural identity." },
+  { id: "occasion", title: "Occasion Optimized", icon: "💍", purpose: "Adapt makeup to the event, lighting, outfit mood, and glam level." },
+  { id: "feature", title: "Feature Highlight", icon: "✨", purpose: "Identify and spotlight the strongest facial feature." },
+  { id: "experimental", title: "Future Trend Look", icon: "🔮", purpose: "Suggest a bolder look the user may not normally imagine." },
+];
+
+function createFaceDNA({ profile, occ, glam, hasFullScan }) {
+  const tone = profile?.skinTone || "Unknown";
+  const skinType = profile?.skinType || "Unknown";
+  const occasion = OCCS.find(o => o.id === occ)?.label || "Not selected";
+
+  return {
+    scanQuality: hasFullScan ? "Complete 5-angle scan" : "Incomplete scan",
+    faceMap: {
+      front: "Primary reference for symmetry, eye spacing, lip balance, and overall proportions.",
+      left: "Jawline, cheek projection, nose bridge, and side contour reference.",
+      right: "Jawline comparison, facial asymmetry check, and side contour reference.",
+      up: "Forehead, brow bone, under-eye shadow, chin length, and highlight zones.",
+      down: "Forehead height, brow shape, upper-face balance, and contour placement.",
+    },
+    knownProfile: { skinTone: tone, skinType, occasion, glam },
+    analysisTargets: [
+      "Face shape",
+      "Skin undertone",
+      "Eye shape",
+      "Lip shape",
+      "Brow balance",
+      "Cheekbone and jawline structure",
+      "Best contour and blush placement",
+      "Most flattering palette family",
+    ],
+  };
+}
+
 const SCAN_ANGLES = [
   { id:"front",      title:"LOOK STRAIGHT AHEAD",   sub:"Center your face in the circle",        icon:"⊙", instruction:"Hold your phone at eye level. Face the camera directly." },
   { id:"left",       title:"TURN SLIGHTLY LEFT",    sub:"Show the right side of your face",      icon:"↶", instruction:"Slowly turn your head 30° to your left." },
@@ -223,7 +260,7 @@ export default function Lumiere() {
       const images = SCAN_ANGLES.map(a => scans[a.id]);
       const res = await fetch("/api/analyze", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ images, occasion: occLabel, glam }),
+        body: JSON.stringify({ images, occasion: occLabel, glam, faceDNA: createFaceDNA({ profile, occ, glam, hasFullScan }) }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -242,7 +279,7 @@ export default function Lumiere() {
       setResult(parsed); setScreen("results");
     } catch { notify("Network error. Please try again."); }
     setLoading(false);
-  }, [scans, glam, occ, hasFullScan]);
+  }, [scans, glam, occ, hasFullScan, profile]);
 
   const saveLook = () => {
     if (!result) return;
@@ -1163,6 +1200,60 @@ function Home({T, profile, preview, looks, events, setTab, scanHistory}) {
 }
 
 
+
+function FaceDNACard({ T, profile, occ, glam, hasFullScan }) {
+  const dna = createFaceDNA({ profile, occ, glam, hasFullScan });
+
+  return (
+    <div style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:15,marginTop:18}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:12}}>
+        <div>
+          <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:5}}>FACE DNA ENGINE</div>
+          <div style={{fontSize:15,color:T.text,fontWeight:300,letterSpacing:1}}>Structured Beauty Analysis</div>
+        </div>
+        <div style={{fontSize:20}}>🧬</div>
+      </div>
+
+      <div style={{
+        background: hasFullScan ? T.accentDim : "rgba(255,80,80,0.08)",
+        border:`1px solid ${hasFullScan ? T.accentBorder : "rgba(255,80,80,0.25)"}`,
+        padding:10,
+        marginBottom:12,
+        fontSize:9,
+        color:T.textSub,
+        lineHeight:1.6
+      }}>
+        <span style={{color:T.accent}}>Scan Status:</span> {dna.scanQuality}. Lumière uses all angles to build a non-generic facial profile before creating the final tutorial.
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+        {Object.entries(dna.knownProfile).map(([key, value]) => (
+          <div key={key} style={{background:T.accentDim,border:`1px solid ${T.border}`,padding:9}}>
+            <div style={{fontSize:7,letterSpacing:2,color:T.accent,marginBottom:4,textTransform:"uppercase"}}>{key}</div>
+            <div style={{fontSize:10,color:T.text}}>{value || "Not selected"}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:8}}>4 PERSONALIZED OUTCOMES</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        {FACE_DNA_OUTCOMES.map(item => (
+          <div key={item.id} style={{background:T.bgDeep,border:`1px solid ${T.border}`,padding:10}}>
+            <div style={{fontSize:17,marginBottom:5}}>{item.icon}</div>
+            <div style={{fontSize:10,color:T.text,marginBottom:5}}>{item.title}</div>
+            <div style={{fontSize:8,color:T.textMuted,lineHeight:1.5}}>{item.purpose}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{borderTop:`1px solid ${T.border}`,marginTop:12,paddingTop:10,fontSize:9,color:T.textMuted,lineHeight:1.6}}>
+        <span style={{color:T.accent}}>Accuracy Rule:</span> If any angle is missing, Lumière should label the result as estimated rather than claiming perfect accuracy.
+      </div>
+    </div>
+  );
+}
+
+
 function SmartPaletteCard({ T, occ, glam, profile }) {
   if (!occ) {
     return (
@@ -1309,6 +1400,8 @@ function Scan({T, scans, hasFullScan, primaryFace, startCamera, resetScan, glam,
           </button>
         ))}
       </div>
+      <FaceDNACard T={T} profile={profile} occ={occ} glam={glam} hasFullScan={hasFullScan}/>
+
       <SmartPaletteCard T={T} occ={occ} glam={glam} profile={profile}/>
 
       <button style={{width:"100%",background:ok?T.btn:"transparent",color:ok?T.btnText:T.textMuted,border:ok?"none":`1px solid ${T.border}`,padding:"17px",fontSize:10,letterSpacing:5,fontWeight:700,cursor:ok?"pointer":"default",marginTop:22,display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"all 0.3s",boxShadow:ok?T.shadowGold:"none"}} onClick={ok?analyze:undefined} disabled={!ok}>
