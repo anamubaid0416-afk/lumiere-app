@@ -2,18 +2,119 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14' font-size='14'%3E◆%3C/text%3E%3C/svg%3E" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#0D1B2A" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+
+    <!-- Primary Meta Tags -->
     <title>Lumière — AI Beauty Companion</title>
+    <meta name="title" content="Lumière — AI Beauty Companion" />
+    <meta name="description" content="Your personalized AI beauty advisor with face analysis, voice tutorials, and a smart beauty calendar — every occasion, your face, perfected." />
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#0D1B2A" />
+    <meta name="background-color" content="#0D1B2A" />
+
+    <!-- Standard favicon -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-72.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-72.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+
+    <!-- iOS / Apple specific -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Lumière" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png" />
+
+    <!-- Android specific -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="application-name" content="Lumière" />
+
+    <!-- Microsoft tiles -->
+    <meta name="msapplication-TileColor" content="#0D1B2A" />
+    <meta name="msapplication-TileImage" content="/icons/icon-144.png" />
+
+    <!-- Open Graph / Social -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Lumière — AI Beauty Companion" />
+    <meta property="og:description" content="Your personalized AI beauty advisor with face analysis, voice tutorials, and a smart beauty calendar." />
+
     <style>
       * { box-sizing: border-box; }
-      html, body { margin: 0; padding: 0; background: #0D1B2A; -webkit-font-smoothing: antialiased; }
-      #root { min-height: 100vh; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: #0D1B2A;
+        -webkit-font-smoothing: antialiased;
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+        overscroll-behavior: none;
+      }
+      #root { min-height: 100vh; min-height: 100dvh; }
+
+      /* Loading splash before React hydrates */
+      .pwa-splash {
+        position: fixed;
+        inset: 0;
+        background: #0D1B2A;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 18px;
+        z-index: 9999;
+        font-family: 'Palatino Linotype','Book Antiqua',Palatino,serif;
+      }
+      .pwa-splash.fade-out {
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.6s ease;
+      }
+      .pwa-splash-logo {
+        font-size: 48px;
+        letter-spacing: 14px;
+        color: #F5F0E8;
+        font-weight: 300;
+      }
+      .pwa-splash-tag {
+        font-size: 9px;
+        letter-spacing: 7px;
+        color: #D4AF7A;
+      }
     </style>
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- Splash shows while React loads -->
+    <div id="pwa-splash" class="pwa-splash">
+      <div class="pwa-splash-logo">LUMIÈRE</div>
+      <div class="pwa-splash-tag">AI BEAUTY COMPANION</div>
+    </div>
+
     <script type="module" src="/src/main.jsx"></script>
+
+    <script>
+      // Hide splash once app loads
+      window.addEventListener('load', () => {
+        setTimeout(() => {
+          const splash = document.getElementById('pwa-splash');
+          if (splash) {
+            splash.classList.add('fade-out');
+            setTimeout(() => splash.remove(), 700);
+          }
+        }, 500);
+      });
+
+      // Register service worker for PWA install
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/service-worker.js')
+            .then(reg => console.log('✓ Lumière PWA service worker registered'))
+            .catch(err => console.log('Service worker registration failed:', err));
+        });
+      }
+    </script>
   </body>
 </html>
