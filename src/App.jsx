@@ -43,6 +43,106 @@ const GLAM = [
   {id:"medium",label:"Medium Glam",sub:"Polished & Refined",dot:2},
   {id:"full",label:"Full Glam",sub:"Dramatic & Stunning",dot:3},
 ];
+// ─── SMART PALETTE ENGINE ─────────────────────────────────────
+const PALETTE_LIBRARY = {
+  daily: {
+    title: "Clean Everyday Polish",
+    shades: ["Nude Beige", "Taupe", "Soft Peach", "Muted Pink", "Light Brown"],
+    lipstick: "Peach nude or muted pink",
+    eyeshadow: "Matte nude with light brown definition",
+    blush: "Natural peach",
+    highlighter: "Soft satin glow",
+  },
+  date: {
+    title: "Romantic Date Night",
+    shades: ["Mauve", "Rose Gold", "Warm Brown", "Champagne", "Berry"],
+    lipstick: "Mauve nude, rose berry, or soft red",
+    eyeshadow: "Rose gold shimmer with warm brown depth",
+    blush: "Rose mauve",
+    highlighter: "Champagne glow",
+  },
+  wedding: {
+    title: "Soft Glam Wedding Glow",
+    shades: ["Rose Gold", "Champagne", "Soft Brown", "Peach", "Mauve"],
+    lipstick: "Rose nude, soft berry, or elegant coral",
+    eyeshadow: "Rose gold shimmer with soft brown crease",
+    blush: "Peachy pink",
+    highlighter: "Champagne glow",
+  },
+  brunch: {
+    title: "Fresh Brunch Glow",
+    shades: ["Peach", "Soft Coral", "Champagne", "Pink", "Nude"],
+    lipstick: "Tinted peach, coral, or fresh pink",
+    eyeshadow: "Soft peach wash with champagne shimmer",
+    blush: "Fresh coral pink",
+    highlighter: "Dewy champagne",
+  },
+  party: {
+    title: "Bold Night Out Look",
+    shades: ["Bronze", "Chocolate Brown", "Gold", "Berry", "Black Smoke"],
+    lipstick: "Berry, red, or deep nude",
+    eyeshadow: "Bronze shimmer with smoky edges",
+    blush: "Warm rose",
+    highlighter: "Golden glow",
+  },
+  interview: {
+    title: "Confident Professional Look",
+    shades: ["Nude Beige", "Taupe", "Light Brown", "Soft Peach", "Muted Pink"],
+    lipstick: "Muted rose, peach nude, or soft brown nude",
+    eyeshadow: "Matte taupe with clean light brown definition",
+    blush: "Natural peach",
+    highlighter: "Very soft natural glow",
+  },
+  graduation: {
+    title: "Camera-Ready Graduation Glow",
+    shades: ["Bronze", "Soft Gold", "Mauve", "Warm Brown", "Champagne"],
+    lipstick: "Mauve, rose nude, or classic soft red",
+    eyeshadow: "Warm bronze with soft gold highlight",
+    blush: "Rose peach",
+    highlighter: "Soft gold",
+  },
+  outdoor: {
+    title: "Fresh Outdoor Radiance",
+    shades: ["Peach", "Soft Coral", "Light Bronze", "Nude", "Champagne"],
+    lipstick: "Coral tint, peach nude, or glossy pink",
+    eyeshadow: "Light bronze or peach wash",
+    blush: "Fresh coral",
+    highlighter: "Subtle dewy glow",
+  },
+};
+
+const SHADE_COLORS = {
+  "Rose Gold": "#b76e79",
+  Champagne: "#f7e7ce",
+  "Soft Brown": "#9b6a45",
+  Peach: "#ffb07c",
+  Mauve: "#b784a7",
+  Bronze: "#cd7f32",
+  "Chocolate Brown": "#5c4033",
+  Gold: "#d4af37",
+  Berry: "#8a2042",
+  "Black Smoke": "#2b2b2b",
+  "Nude Beige": "#d8bfa3",
+  Taupe: "#8b8589",
+  "Soft Peach": "#ffc4a3",
+  "Light Brown": "#b5651d",
+  "Muted Pink": "#d8a0a7",
+  Pink: "#ffc0cb",
+  Nude: "#c68642",
+  "Soft Coral": "#f88379",
+  "Light Bronze": "#b08d57",
+  "Soft Gold": "#e6c56e",
+  "Warm Brown": "#8b4513",
+};
+
+const SKIN_TONE_TIPS = {
+  Fair: "Soft pink, peach, champagne, and rose nude will look fresh.",
+  Light: "Peach, rose, mauve, bronze, and coral will create balanced warmth.",
+  Medium: "Gold, copper, warm rose, berry, and brown tones will look very flattering.",
+  Tan: "Bronze, peach, terracotta, coral, and warm nude shades will enhance your glow.",
+  Deep: "Rich berry, gold, copper, chocolate, plum, and warm red shades will look stunning.",
+};
+
 const SCAN_ANGLES = [
   { id:"front",      title:"LOOK STRAIGHT AHEAD",   sub:"Center your face in the circle",        icon:"⊙", instruction:"Hold your phone at eye level. Face the camera directly." },
   { id:"left",       title:"TURN SLIGHTLY LEFT",    sub:"Show the right side of your face",      icon:"↶", instruction:"Slowly turn your head 30° to your left." },
@@ -172,7 +272,7 @@ export default function Lumiere() {
   return (
     <Shell T={T} manual={manual} setManual={setManual} occ={occ} profile={profile} tab={tab} setTab={setTab} notif={notif} events={events}>
       {tab==="home" && <Home T={T} profile={profile} preview={primaryFace} looks={looks} events={events} setTab={setTab} scanHistory={scanHistory}/>}
-      {tab==="scan" && <Scan T={T} scans={scans} hasFullScan={hasFullScan} primaryFace={primaryFace} startCamera={()=>setScreen("camera")} resetScan={resetScan} glam={glam} setGlam={setGlam} occ={occ} setOcc={setOcc} analyze={analyze} loading={loading}/>}
+      {tab==="scan" && <Scan T={T} scans={scans} hasFullScan={hasFullScan} primaryFace={primaryFace} startCamera={()=>setScreen("camera")} resetScan={resetScan} glam={glam} setGlam={setGlam} occ={occ} setOcc={setOcc} analyze={analyze} loading={loading} profile={profile}/>}
       {tab==="looks" && <Looks T={T} looks={looks}/>}
       {tab==="lumi" && <LumiChat T={T} profile={profile} setProfile={setProfile} faceAnalysis={result} events={events} addEvent={addEvent} updateEvent={updateEvent} removeEvent={removeEvent} chatMessages={chatMessages} setChatMessages={setChatMessages} scanHistory={scanHistory} lastScanDate={lastScanDate} lastChatOpenedDate={lastChatOpenedDate} setLastChatOpenedDate={setLastChatOpenedDate} notify={notify} setTab={setTab}/>}
       {tab==="profile" && <Profile T={T} profile={profile} preview={primaryFace} hasFullScan={hasFullScan} startCamera={()=>setScreen("camera")} scanHistory={scanHistory} events={events}/>}
@@ -1062,8 +1162,77 @@ function Home({T, profile, preview, looks, events, setTab, scanHistory}) {
   );
 }
 
+
+function SmartPaletteCard({ T, occ, glam, profile }) {
+  if (!occ) {
+    return (
+      <div style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:14,marginTop:18}}>
+        <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:7}}>STEP 4 — SMART PALETTE</div>
+        <div style={{fontSize:11,color:T.text,marginBottom:4}}>Choose an occasion to unlock your palette.</div>
+        <div style={{fontSize:9,color:T.textMuted,lineHeight:1.6}}>Lumière will suggest lipstick, eyeshadow, blush, highlighter, and five signature shades.</div>
+      </div>
+    );
+  }
+
+  const palette = PALETTE_LIBRARY[occ] || PALETTE_LIBRARY.daily;
+  const toneTip = SKIN_TONE_TIPS[profile?.skinTone] || "These shades are selected to stay wearable, balanced, and camera-friendly.";
+
+  return (
+    <div style={{background:T.bgCard,border:`1px solid ${T.accentBorder}`,padding:15,marginTop:18,boxShadow:T.shadowGold}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:12}}>
+        <div>
+          <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:5}}>STEP 4 — SMART PALETTE</div>
+          <div style={{fontSize:15,color:T.text,fontWeight:300,letterSpacing:1}}>{palette.title}</div>
+        </div>
+        <div style={{fontSize:20}}>🎨</div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:7,marginBottom:13}}>
+        {palette.shades.map(shade => (
+          <div key={shade} style={{textAlign:"center"}}>
+            <div style={{
+              width:"100%",
+              aspectRatio:"1",
+              background:SHADE_COLORS[shade] || T.accent,
+              border:`1px solid ${T.border}`,
+              boxShadow:"0 4px 14px rgba(0,0,0,0.15)"
+            }}/>
+            <div style={{fontSize:7,color:T.textSub,marginTop:5,lineHeight:1.2}}>{shade}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+        <div style={{background:T.accentDim,border:`1px solid ${T.border}`,padding:10}}>
+          <div style={{fontSize:7,letterSpacing:2,color:T.accent,marginBottom:4}}>LIPSTICK</div>
+          <div style={{fontSize:9,color:T.textSub,lineHeight:1.45}}>{palette.lipstick}</div>
+        </div>
+        <div style={{background:T.accentDim,border:`1px solid ${T.border}`,padding:10}}>
+          <div style={{fontSize:7,letterSpacing:2,color:T.accent,marginBottom:4}}>EYES</div>
+          <div style={{fontSize:9,color:T.textSub,lineHeight:1.45}}>{palette.eyeshadow}</div>
+        </div>
+        <div style={{background:T.accentDim,border:`1px solid ${T.border}`,padding:10}}>
+          <div style={{fontSize:7,letterSpacing:2,color:T.accent,marginBottom:4}}>BLUSH</div>
+          <div style={{fontSize:9,color:T.textSub,lineHeight:1.45}}>{palette.blush}</div>
+        </div>
+        <div style={{background:T.accentDim,border:`1px solid ${T.border}`,padding:10}}>
+          <div style={{fontSize:7,letterSpacing:2,color:T.accent,marginBottom:4}}>HIGHLIGHT</div>
+          <div style={{fontSize:9,color:T.textSub,lineHeight:1.45}}>{palette.highlighter}</div>
+        </div>
+      </div>
+
+      <div style={{borderTop:`1px solid ${T.border}`,paddingTop:10,fontSize:9,color:T.textMuted,lineHeight:1.6}}>
+        <span style={{color:T.accent}}>Lumi Tip:</span> {toneTip}
+        <br/>
+        <span style={{color:T.accent}}>Glam Level:</span> {glam === "full" ? "Make the eyes deeper and lips more defined." : glam === "casual" ? "Keep the finish soft, fresh, and wearable." : "Balance polish with visible glow."}
+      </div>
+    </div>
+  );
+}
+
+
 // ─── SCAN TAB ────────────────────────────────────────────────
-function Scan({T, scans, hasFullScan, primaryFace, startCamera, resetScan, glam, setGlam, occ, setOcc, analyze, loading}) {
+function Scan({T, scans, hasFullScan, primaryFace, startCamera, resetScan, glam, setGlam, occ, setOcc, analyze, loading, profile}) {
   const ok = hasFullScan && occ && !loading;
   return (
     <div style={{padding:"24px 20px"}}>
@@ -1140,6 +1309,8 @@ function Scan({T, scans, hasFullScan, primaryFace, startCamera, resetScan, glam,
           </button>
         ))}
       </div>
+      <SmartPaletteCard T={T} occ={occ} glam={glam} profile={profile}/>
+
       <button style={{width:"100%",background:ok?T.btn:"transparent",color:ok?T.btnText:T.textMuted,border:ok?"none":`1px solid ${T.border}`,padding:"17px",fontSize:10,letterSpacing:5,fontWeight:700,cursor:ok?"pointer":"default",marginTop:22,display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"all 0.3s",boxShadow:ok?T.shadowGold:"none"}} onClick={ok?analyze:undefined} disabled={!ok}>
         {loading?"◆ ANALYZING ALL 5 ANGLES...":"◆ GENERATE MY TUTORIAL"}
       </button>
