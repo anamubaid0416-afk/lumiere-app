@@ -253,31 +253,57 @@ export default function Lumiere() {
   }, []);
 
   const analyze = useCallback(async () => {
-    if (!hasFullScan || !occ) return;
-    setLoading(true); setResult(null);
+    if (!hasFullScan || !occ) {
+      notify("Please complete your scan and choose an occasion first.");
+      return;
+    }
+
+    setLoading(true);
+    setResult(null);
+
     try {
-      const occLabel = OCCS.find(o=>o.id===occ)?.label || "General";
-      const images = SCAN_ANGLES.map(a => scans[a.id]);
+      const occLabel = OCCS.find(o => o.id === occ)?.label || "General";
+
+      // Backend needs an array, not the scans object.
+      const images = SCAN_ANGLES.map(a => scans[a.id]).filter(Boolean);
+
       const res = await fetch("/api/analyze", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ images, occasion: occLabel, glam, faceDNA: createFaceDNA({ profile, occ, glam, hasFullScan }) }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          images,
+          occasion: occLabel,
+          glam,
+          faceDNA: createFaceDNA({ profile, occ, glam, hasFullScan }),
+        }),
       });
+
+      const data = await res.json();
+      console.log("API RESPONSE:", data);
+
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        notify(err.error || "Analysis failed. Please try again.");
-        setLoading(false); return;
+        notify(data.error || "Analysis failed. Please try again.");
+        setLoading(false);
+        return;
       }
-      const parsed = await res.json();
-      // Add to scan history
+
       const scanEntry = {
-        id: 'scan_' + Date.now(),
+        id: "scan_" + Date.now(),
         date: new Date().toISOString(),
-        analysis: parsed,
-        primaryFace: scans.front
+        analysis: data,
+        primaryFace: scans.front,
       };
-      setScanHistory(p => [scanEntry, ...p].slice(0, 10)); // Keep last 10 scans
-      setResult(parsed); setScreen("results");
-    } catch { notify("Network error. Please try again."); }
+
+      setScanHistory(p => [scanEntry, ...p].slice(0, 10));
+      setResult(data);
+
+      // Go to the dedicated Results screen.
+      setScreen("results");
+    } catch (error) {
+      console.error("Analyze error:", error);
+      notify("Network error. Please try again.");
+    }
+
     setLoading(false);
   }, [scans, glam, occ, hasFullScan, profile]);
 
