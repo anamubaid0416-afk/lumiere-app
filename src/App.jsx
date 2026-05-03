@@ -695,6 +695,8 @@ function TutorialPlayer({ T, result, preview, occ, glam, onClose }) {
   const [progress, setProgress] = useState(0);
   const utteranceRef = useRef(null);
   const progressRef = useRef(null);
+      <AIFaceAnalysisCard T={T} result={result}/>
+
   const steps = result ? Object.entries(result.tutorial).map(([key, val]) => ({ key, ...val })) : [];
   const currentStep = steps[stepIdx];
   const overlay = currentStep ? STEP_OVERLAYS[currentStep.key] : null;
@@ -1411,6 +1413,104 @@ function Scan({T, scans, hasFullScan, primaryFace, startCamera, resetScan, glam,
     </div>
   );
 }
+
+
+function AIFaceAnalysisCard({ T, result }) {
+  if (!result?.faceDNA) return null;
+
+  const dna = result.faceDNA;
+  const placement = dna.placementMap || {};
+  const palette = Array.isArray(dna.paletteFamily) ? dna.paletteFamily : [];
+
+  return (
+    <div style={{background:T.bgCard,border:`1px solid ${T.accentBorder}`,padding:16,margin:"18px 0",boxShadow:T.shadowGold}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:14}}>
+        <div>
+          <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:5}}>AI FACE ANALYSIS</div>
+          <div style={{fontSize:18,color:T.text,fontWeight:300,letterSpacing:1}}>Your Face DNA Results</div>
+        </div>
+        <div style={{fontSize:24}}>🧬</div>
+      </div>
+
+      {dna.scanQuality && (
+        <div style={{background:T.accentDim,border:`1px solid ${T.border}`,padding:10,marginBottom:12,fontSize:10,color:T.textSub,lineHeight:1.6}}>
+          <span style={{color:T.accent}}>Scan Quality:</span> {dna.scanQuality}
+        </div>
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+        <MiniInsight T={T} label="Face Shape" value={dna.faceShape?.value} sub={dna.faceShape?.confidence} />
+        <MiniInsight T={T} label="Eyes" value={dna.eyeStructure?.value} sub={dna.eyeStructure?.makeupImplication} />
+        <MiniInsight T={T} label="Brows" value={dna.browStructure?.value} sub={dna.browStructure?.makeupImplication} />
+        <MiniInsight T={T} label="Lips" value={dna.lipStructure?.value} sub={dna.lipStructure?.makeupImplication} />
+        <MiniInsight T={T} label="Skin Depth" value={dna.skinTone?.depth} sub={`Undertone: ${dna.skinTone?.undertone || "Not clear"}`} />
+        <MiniInsight T={T} label="Skin Confidence" value={dna.skinTone?.confidence} sub="Lighting can affect undertone." />
+      </div>
+
+      {dna.faceShape?.reason && (
+        <div style={{background:T.bgDeep,border:`1px solid ${T.border}`,padding:12,marginBottom:12,fontSize:10,color:T.textSub,lineHeight:1.7}}>
+          <span style={{color:T.accent}}>Why:</span> {dna.faceShape.reason}
+        </div>
+      )}
+
+      <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:8}}>PLACEMENT MAP</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+        <MiniInsight T={T} label="Contour" value={placement.contour} />
+        <MiniInsight T={T} label="Blush" value={placement.blush} />
+        <MiniInsight T={T} label="Highlight" value={placement.highlight} />
+        <MiniInsight T={T} label="Eyeshadow" value={placement.eyeshadow} />
+        <MiniInsight T={T} label="Brows" value={placement.brows} />
+        <MiniInsight T={T} label="Lips" value={placement.lips} />
+      </div>
+
+      {palette.length > 0 && (
+        <>
+          <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:8}}>AI PALETTE FAMILY</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:7,marginBottom:12}}>
+            {palette.map((p, i) => (
+              <span key={i} style={{background:T.accentDim,border:`1px solid ${T.accentBorder}`,color:T.textSub,fontSize:9,padding:"7px 10px"}}>
+                {p}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
+
+      {result.fourOutcomes && (
+        <>
+          <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:8}}>4 AI OUTCOMES</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:8}}>
+            <OutcomeLine T={T} title="Natural Enhancement" text={result.fourOutcomes.naturalEnhancement} />
+            <OutcomeLine T={T} title="Occasion Optimized" text={result.fourOutcomes.occasionOptimized} />
+            <OutcomeLine T={T} title="Feature Highlight" text={result.fourOutcomes.featureHighlight} />
+            <OutcomeLine T={T} title="Future Trend" text={result.fourOutcomes.futureTrend} />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function MiniInsight({ T, label, value, sub }) {
+  return (
+    <div style={{background:T.accentDim,border:`1px solid ${T.border}`,padding:10,minHeight:58}}>
+      <div style={{fontSize:7,letterSpacing:2,color:T.accent,marginBottom:5,textTransform:"uppercase"}}>{label}</div>
+      <div style={{fontSize:10,color:T.text,lineHeight:1.4}}>{value || "Not available"}</div>
+      {sub && <div style={{fontSize:8,color:T.textMuted,lineHeight:1.45,marginTop:4}}>{sub}</div>}
+    </div>
+  );
+}
+
+function OutcomeLine({ T, title, text }) {
+  if (!text) return null;
+  return (
+    <div style={{background:T.bgDeep,border:`1px solid ${T.border}`,padding:10}}>
+      <div style={{fontSize:9,color:T.accent,letterSpacing:2,marginBottom:5,textTransform:"uppercase"}}>{title}</div>
+      <div style={{fontSize:10,color:T.textSub,lineHeight:1.65}}>{text}</div>
+    </div>
+  );
+}
+
 
 function Results({T, result, preview, occ, glam, onSave, onBack, onNew, onPlay}) {
   const [step, setStep] = useState(0);
