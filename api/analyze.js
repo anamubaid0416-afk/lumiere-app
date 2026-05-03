@@ -1,40 +1,171 @@
-const analyze = async () => {
-  try {
-    setLoading(true);
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Only POST requests allowed" });
+  }
 
-    const res = await fetch("/api/analyze", {
+  try {
+    const { images, occasion, glam, faceDNA } = req.body;
+
+    if (!images || !Array.isArray(images) || images.length === 0) {
+      return res.status(400).json({
+        error: "No images received. Please complete the face scan again.",
+      });
+    }
+
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return res.status(500).json({
+        error: "Anthropic API key is missing in Vercel environment variables.",
+      });
+    }
+
+    const systemPrompt = `
+You are Lumière Face DNA Engine.
+
+Analyze the uploaded 5 facial angles as a structured beauty analysis, not generic compliments.
+
+Rules:
+- If any image is blurry, poorly lit, cropped, or missing facial visibility, state that accuracy is limited.
+- Do not claim medical, dermatological, ethnicity, identity, or exact age certainty.
+- Do not identify the person.
+- Use cautious language: appears, suggests, likely, best estimate.
+- Return JSON only. No markdown. No extra explanation.
+
+Return exactly this JSON structure:
+
+{
+  "lookName": "",
+  "faceDNA": {
+    "scanQuality": "",
+    "faceShape": {"value": "", "confidence": "", "reason": ""},
+    "orientation": {"front": "", "left": "", "right": "", "up": "", "down": ""},
+    "eyeStructure": {"value": "", "makeupImplication": ""},
+    "browStructure": {"value": "", "makeupImplication": ""},
+    "lipStructure": {"value": "", "makeupImplication": ""},
+    "skinTone": {"depth": "", "undertone": "", "confidence": ""},
+    "placementMap": {
+      "contour": "",
+      "blush": "",
+      "highlight": "",
+      "eyeshadow": "",
+      "brows": "",
+      "lips": ""
+    },
+    "paletteFamily": ["", "", "", "", ""]
+  },
+  "fourOutcomes": {
+    "naturalEnhancement": "",
+    "occasionOptimized": "",
+    "featureHighlight": "",
+    "futureTrend": ""
+  },
+  "tutorial": {
+    "step1": {"title": "Skin Prep", "instruction": ""},
+    "step2": {"title": "Foundation", "instruction": ""},
+    "step3": {"title": "Contour", "instruction": ""},
+    "step4": {"title": "Blush", "instruction": ""},
+    "step5": {"title": "Eye Makeup", "instruction": ""},
+    "step6": {"title": "Brows", "instruction": ""},
+    "step7": {"title": "Lips", "instruction": ""},
+    "step8": {"title": "Setting", "instruction": ""}
+  }
+}
+`;
+
+    const imageBlocks = images.map((img) => {
+      const match =
+        typeof img === "string"
+          ? img.match(/^data:(image\/\w+);base64,(.+)$/)
+          : null;
+
+      return {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: match ? match[1] : "image/jpeg",
+          data: match ? match[2] : img,
+        },
+      };
+    });
+
+    const userText = `
+Occasion: ${occasion || "General"}
+Glam level: ${glam || "medium"}
+
+Frontend Face DNA context:
+${JSON.stringify(faceDNA || {}, null, 2)}
+
+Analyze all uploaded facial angles together and create a precise structured Face DNA makeup recommendation.
+`;
+
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "content-type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        images: scans,
-        occasion: occ,
-        glam,
-        faceDNA: createFaceDNA({ profile, occ, glam, hasFullScan }),
+        model: process.env.ANTHROPIC_MODEL || "claude-3-haiku-20240307",
+        max_tokens: 4000,
+        temperature: 0.3,
+        system: systemPrompt,
+        messages: [
+          {
+            role: "user",
+            content: [{ type: "text", text: userText }, ...imageBlocks],
+          },
+        ],
       }),
     });
 
-    const data = await res.json();
+    const data = await response.json();
 
-    console.log("API RESPONSE:", data);
-
-    if (!res.ok) {
-      alert("API Error: " + (data.error || "Unknown error"));
-      setLoading(false);
-      return;
+    if (!response.ok) {
+      console.error("Anthropic API error:", data);
+      return res.status(response.status).json({
+        error: data?.error?.message || "Anthropic API request failed",
+        details: data,
+      });
     }
 
-    // ✅ SAVE RESULT
-    setResult(data);
+    const text = data?.content?.[0]?.text || "";
 
-    // 💥 FORCE NAVIGATION (THIS WAS MISSING)
-    setTab("lumi");   // ← this is your RESULTS tab
+    let parsed;
 
-  } catch (err) {
-    console.error(err);
-    alert("Something went wrong: " + err.message);
-  } finally {
-    setLoading(false);
+    try {
+      parsed = JSON.parse(text);
+    } catch (error) {
+      console.error("Failed to parse AI response:", error);
+      console.error("Raw AI response:", text);
+
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+
+      if (jsonMatch) {
+        try {
+          parsed = JSON.parse(jsonMatch[0]);
+        } catch (secondError) {
+          return res.status(500).json({
+            error: "AI returned invalid JSON",
+            rawResponse: text,
+          });
+        }
+      } else {
+        return res.status(500).json({
+          error: "AI returned invalid JSON",
+          rawResponse: text,
+        });
+      }
+    }
+
+    console.log("Lumière Face DNA parsed response:");
+    console.log(JSON.stringify(parsed, null, 2));
+
+    return res.status(200).json(parsed);
+  } catch (error) {
+    console.error("Analyze API error:", error);
+
+    return res.status(500).json({
+      error: error.message || "Server error in analyze API",
+    });
   }
-};
+}
