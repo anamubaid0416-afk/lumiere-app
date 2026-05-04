@@ -200,6 +200,49 @@ const STEP_OVERLAYS = {
 
 const FF = "'Palatino Linotype','Book Antiqua',Palatino,serif";
 
+const DEFAULT_TUTORIAL = {
+  step1: { title: "Skin Prep", instruction: "Cleanse, moisturize, and let skin care settle before makeup. Use a primer matched to your skin type." },
+  step2: { title: "Foundation", instruction: "Apply thin layers from the center of the face outward, keeping coverage light where your skin already looks even." },
+  step3: { title: "Contour", instruction: "Add soft definition under the cheekbones, around the hairline, and lightly under the jaw, then blend until there are no edges." },
+  step4: { title: "Blush", instruction: "Place blush where your cheeks naturally lift, blending slightly upward for a fresh, balanced finish." },
+  step5: { title: "Eye Makeup", instruction: "Use your mid-tone shade through the crease, deepen the outer corner, and brighten the inner corner or lid center." },
+  step6: { title: "Brows", instruction: "Brush brows upward, fill only sparse areas, and keep the front of the brow softer than the arch and tail." },
+  step7: { title: "Lips", instruction: "Define the lip line softly, blend inward, then apply lipstick or gloss that matches the chosen palette." },
+  step8: { title: "Setting", instruction: "Set only the areas that crease or get shiny, then mist lightly so the look stays fresh instead of heavy." },
+};
+
+function normalizeAnalysis(raw) {
+  if (!raw) return null;
+  const faceDNA = raw.faceDNA || {};
+  const skinTone = faceDNA.skinTone || {};
+  const placement = faceDNA.placementMap || {};
+  const palette = Array.isArray(faceDNA.paletteFamily) ? faceDNA.paletteFamily : [];
+
+  return {
+    ...raw,
+    lookName: raw.lookName || "Personalized Lumiere Look",
+    faceDNA,
+    tutorial: raw.tutorial && Object.keys(raw.tutorial).length ? raw.tutorial : DEFAULT_TUTORIAL,
+    faceShape: raw.faceShape || faceDNA.faceShape?.value || "",
+    skinTone: raw.skinTone || [skinTone.depth, skinTone.undertone].filter(Boolean).join(" ") || "",
+    undertone: raw.undertone || skinTone.undertone || "",
+    eyeShape: raw.eyeShape || faceDNA.eyeStructure?.value || "",
+    jawline: raw.jawline || placement.contour || "",
+    cheekbones: raw.cheekbones || placement.blush || "",
+    features: raw.features || [
+      faceDNA.eyeStructure?.value && `Eyes: ${faceDNA.eyeStructure.value}`,
+      faceDNA.browStructure?.value && `Brows: ${faceDNA.browStructure.value}`,
+      faceDNA.lipStructure?.value && `Lips: ${faceDNA.lipStructure.value}`,
+    ].filter(Boolean),
+    products: raw.products || palette.slice(0, 4).map((shade) => ({
+      name: "Palette shade",
+      shade,
+      why: "Selected by the Face DNA analysis for this occasion and glam level.",
+    })),
+    proTip: raw.proTip || raw.fourOutcomes?.featureHighlight || placement.highlight || "Blend in thin layers and keep the strongest detail on your best feature.",
+  };
+}
+
 // ─── STORAGE ─────────────────────────────────────────────────
 const STORAGE = {
   load(key, fallback) {
@@ -222,7 +265,7 @@ export default function Lumiere() {
   const [scans, setScans] = useState({});
   const [glam, setGlam] = useState("medium");
   const [occ, setOcc] = useState(null);
-  const [result, setResult] = useState(() => STORAGE.load('lastResult', null));
+  const [result, setResult] = useState(() => normalizeAnalysis(STORAGE.load('lastResult', null)));
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState("home");
   const [looks, setLooks] = useState(() => STORAGE.load('looks', []));
@@ -278,31 +321,33 @@ export default function Lumiere() {
         }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       console.log("API RESPONSE:", data);
 
       if (!res.ok) {
         console.error("API ERROR:", data);
-        notify("Analysis failed. Please check Vercel logs.");
+        notify(data?.error || "Analysis failed. Please try a fresh scan.");
         setLoading(false);
         return;
       }
 
+      const normalized = normalizeAnalysis(data);
+
       const scanEntry = {
         id: "scan_" + Date.now(),
         date: new Date().toISOString(),
-        analysis: data,
+        analysis: normalized,
         primaryFace: scans.front,
       };
 
       setScanHistory(p => [scanEntry, ...p].slice(0, 10));
-      setResult(data);
+      setResult(normalized);
 
       // Go to the dedicated Results screen.
       setScreen("results");
     } catch (error) {
       console.error("Analyze error:", error);
-      notify("Network error. Please try again.");
+      notify(error?.message || "Network error. Please try again.");
     }
 
     setLoading(false);
@@ -717,12 +762,12 @@ function formatDate(dateStr) {
 
 // ─── TUTORIAL PLAYER ─────────────────────────────────────────
 function TutorialPlayer({ T, result, preview, occ, glam, onClose }) {
+  result = normalizeAnalysis(result);
   const [stepIdx, setStepIdx] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [progress, setProgress] = useState(0);
   const utteranceRef = useRef(null);
   const progressRef = useRef(null);
-      <AIFaceAnalysisCard T={T} result={result}/>
 
   const steps = result ? Object.entries(result.tutorial).map(([key, val]) => ({ key, ...val })) : [];
   const currentStep = steps[stepIdx];
@@ -877,12 +922,13 @@ function CameraScan({ T, scans, setScans, onDone, onCancel, notify }) {
     if (!videoRef.current || !canvasRef.current) return null;
     const video = videoRef.current; const canvas = canvasRef.current;
     const size = Math.min(video.videoWidth, video.videoHeight);
-    canvas.width = size; canvas.height = size;
+    const outputSize = Math.min(size, 768);
+    canvas.width = outputSize; canvas.height = outputSize;
     const ctx = canvas.getContext("2d");
     const sx = (video.videoWidth - size) / 2; const sy = (video.videoHeight - size) / 2;
-    ctx.translate(size, 0); ctx.scale(-1, 1);
-    ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size);
-    return canvas.toDataURL("image/jpeg", 0.9);
+    ctx.translate(outputSize, 0); ctx.scale(-1, 1);
+    ctx.drawImage(video, sx, sy, size, size, 0, 0, outputSize, outputSize);
+    return canvas.toDataURL("image/jpeg", 0.72);
   }, []);
 
   const handleCapture = useCallback(() => {
@@ -1448,6 +1494,14 @@ function AIFaceAnalysisCard({ T, result }) {
   const dna = result.faceDNA;
   const placement = dna.placementMap || {};
   const palette = Array.isArray(dna.paletteFamily) ? dna.paletteFamily : [];
+  const orientation = dna.orientation || {};
+  const orientationRows = [
+    ["Front", orientation.front],
+    ["Left", orientation.left],
+    ["Right", orientation.right],
+    ["Chin Up", orientation.up],
+    ["Chin Down", orientation.down],
+  ].filter(([, value]) => value);
 
   return (
     <div style={{background:T.bgCard,border:`1px solid ${T.accentBorder}`,padding:16,margin:"18px 0",boxShadow:T.shadowGold}}>
@@ -1478,6 +1532,17 @@ function AIFaceAnalysisCard({ T, result }) {
         <div style={{background:T.bgDeep,border:`1px solid ${T.border}`,padding:12,marginBottom:12,fontSize:10,color:T.textSub,lineHeight:1.7}}>
           <span style={{color:T.accent}}>Why:</span> {dna.faceShape.reason}
         </div>
+      )}
+
+      {orientationRows.length > 0 && (
+        <>
+          <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:8}}>ANGLE-BY-ANGLE NOTES</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:8,marginBottom:12}}>
+            {orientationRows.map(([label, value]) => (
+              <MiniInsight key={label} T={T} label={label} value={value} />
+            ))}
+          </div>
+        </>
       )}
 
       <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:8}}>PLACEMENT MAP</div>
@@ -1540,6 +1605,7 @@ function OutcomeLine({ T, title, text }) {
 
 
 function Results({T, result, preview, occ, glam, onSave, onBack, onNew, onPlay}) {
+  result = normalizeAnalysis(result);
   const [step, setStep] = useState(0);
   if (!result) return null;
   const steps = Object.values(result.tutorial);
@@ -1570,17 +1636,7 @@ function Results({T, result, preview, occ, glam, onSave, onBack, onNew, onPlay})
         <button onClick={onPlay} style={{width:"100%",background:T.btn,color:T.btnText,border:"none",padding:"16px",fontSize:11,letterSpacing:4,fontWeight:700,cursor:"pointer",marginBottom:18,boxShadow:T.shadowGold,display:"flex",alignItems:"center",justifyContent:"center",gap:10,fontFamily:FF}}>
           <span style={{fontSize:16}}>🎬</span> WATCH GUIDED TUTORIAL
         </button>
-        <div style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:15,marginBottom:17}}>
-          <div style={{fontSize:8,letterSpacing:4,color:T.accent,marginBottom:12}}>◆ FACE ANALYSIS</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:11,marginBottom:11}}>
-            {[["Face Shape",result.faceShape],["Skin Tone",result.skinTone],["Undertone",result.undertone],["Eye Shape",result.eyeShape],["Jawline",result.jawline],["Cheekbones",result.cheekbones]].filter(([,v])=>v).map(([l,v])=>(
-              <div key={l}><div style={{fontSize:7,color:T.textMuted,letterSpacing:2,marginBottom:2}}>{l}</div><div style={{fontSize:13,color:T.text,textTransform:"capitalize"}}>{v}</div></div>
-            ))}
-          </div>
-          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-            {result.features?.map((f,i)=><div key={i} style={{fontSize:7,color:T.accent,border:`1px solid ${T.accentBorder}`,padding:"3px 9px",letterSpacing:1}}>{f}</div>)}
-          </div>
-        </div>
+        <AIFaceAnalysisCard T={T} result={result}/>
         <div style={{fontSize:8,letterSpacing:4,color:T.accent,marginBottom:10}}>STEP-BY-STEP TUTORIAL</div>
         <div style={{display:"flex",gap:5,marginBottom:11,flexWrap:"wrap"}}>
           {steps.map((_,i)=><button key={i} style={{width:30,height:30,background:step===i?T.accentDim:T.bgCard,border:`1px solid ${step===i?T.accent:T.border}`,color:step===i?T.accent:T.textMuted,fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s"}} onClick={()=>setStep(i)}>{i+1}</button>)}
