@@ -9,7 +9,7 @@ const DEFAULT_TUTORIAL = {
   step8: { title: "Setting", instruction: "Set shine-prone areas lightly and mist the face so the final look stays blended and fresh." },
 };
 
-const ANTHROPIC_MODEL = "claude-3-5-haiku-20241022";
+const ANTHROPIC_MODEL = "claude-sonnet-4-20250514";
 
 function normalizeAnalysis(parsed) {
   const faceDNA = parsed?.faceDNA || {};
