@@ -1,7 +1,7 @@
 // /api/chat.js — v6 — SMARTER LUMI
 // Lumi is now: time-aware, scan-history-aware, proactive, look-coordinator
 
-const ANTHROPIC_MODEL = 'claude-3-5-haiku-20241022';
+const ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
