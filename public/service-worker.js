@@ -1,7 +1,7 @@
 // Lumière Service Worker
 // Enables offline mode, caching, and PWA install prompts
 
-const CACHE_VERSION = 'lumiere-v1';
+const CACHE_VERSION = 'lumiere-v2';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -10,8 +10,8 @@ const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png'
+  '/icon-192.png',
+  '/icon-512.png'
 ];
 
 // Install event - cache static assets
@@ -19,8 +19,8 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(STATIC_CACHE)
       .then((cache) => cache.addAll(STATIC_ASSETS))
-      .then(() => self.skipWaiting())
       .catch((err) => console.log('SW install error:', err))
+      .then(() => self.skipWaiting())
   );
 });
 
