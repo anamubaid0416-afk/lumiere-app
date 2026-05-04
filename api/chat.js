@@ -1,6 +1,8 @@
 // /api/chat.js — v6 — SMARTER LUMI
 // Lumi is now: time-aware, scan-history-aware, proactive, look-coordinator
 
+const ANTHROPIC_MODEL = 'claude-3-5-haiku-20241022';
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -225,7 +227,7 @@ After using tools, ALWAYS respond conversationally with what you did and one nat
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: ANTHROPIC_MODEL,
         max_tokens: 1024,
         system: systemPrompt,
         tools: tools,
