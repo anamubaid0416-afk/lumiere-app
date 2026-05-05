@@ -135,6 +135,14 @@ const SHADE_COLORS = {
   "Warm Brown": "#8b4513",
 };
 
+const MAKEUP_ZONE_COLORS = {
+  blush: "#e58aa1",
+  contour: "#7a4a32",
+  highlight: "#f8e6b0",
+  eyeshadow: "#9a6a87",
+  lipstick: "#9f2f4f",
+};
+
 const SKIN_TONE_TIPS = {
   Fair: "Soft pink, peach, champagne, and rose nude will look fresh.",
   Light: "Peach, rose, mauve, bronze, and coral will create balanced warmth.",
@@ -240,6 +248,26 @@ function normalizeAnalysis(raw) {
       why: "Selected by the Face DNA analysis for this occasion and glam level.",
     })),
     proTip: raw.proTip || raw.fourOutcomes?.featureHighlight || placement.highlight || "Blend in thin layers and keep the strongest detail on your best feature.",
+  };
+}
+
+function colorForShade(shade, fallback) {
+  if (!shade) return fallback;
+  return SHADE_COLORS[shade] || fallback;
+}
+
+function getPreviewPalette(result) {
+  const palette = Array.isArray(result?.faceDNA?.paletteFamily) ? result.faceDNA.paletteFamily : [];
+  const products = Array.isArray(result?.products) ? result.products : [];
+  const productShades = products.map(p => p?.shade).filter(Boolean);
+  const shades = [...palette, ...productShades];
+
+  return {
+    lip: colorForShade(shades.find(s => /berry|mauve|rose|pink|coral|red|nude/i.test(s)), MAKEUP_ZONE_COLORS.lipstick),
+    blush: colorForShade(shades.find(s => /peach|coral|rose|pink|mauve/i.test(s)), MAKEUP_ZONE_COLORS.blush),
+    eye: colorForShade(shades.find(s => /brown|bronze|gold|taupe|mauve|rose/i.test(s)), MAKEUP_ZONE_COLORS.eyeshadow),
+    highlight: colorForShade(shades.find(s => /champagne|gold|highlight|soft gold/i.test(s)), MAKEUP_ZONE_COLORS.highlight),
+    contour: colorForShade(shades.find(s => /brown|bronze|taupe/i.test(s)), MAKEUP_ZONE_COLORS.contour),
   };
 }
 
@@ -1603,6 +1631,122 @@ function OutcomeLine({ T, title, text }) {
   );
 }
 
+function FaceMakeupPreview({ T, result, preview }) {
+  const [mode, setMode] = useState("map");
+  if (!preview) return null;
+
+  const palette = getPreviewPalette(result);
+  const placement = result?.faceDNA?.placementMap || {};
+  const zones = [
+    { id:"contour", label:"Contour", color:palette.contour, note:placement.contour || "Softly define the outer face, cheek hollow, and jawline." },
+    { id:"blush", label:"Blush", color:palette.blush, note:placement.blush || "Place color on the lifted cheek area and blend upward." },
+    { id:"highlight", label:"Highlight", color:palette.highlight, note:placement.highlight || "Add glow to high points: cheek tops, nose bridge, and center glow zones." },
+    { id:"eyeshadow", label:"Eyeshadow", color:palette.eye, note:placement.eyeshadow || "Keep depth around the lid and outer eye, then brighten where the eye opens." },
+    { id:"lipstick", label:"Lipstick", color:palette.lip, note:placement.lips || "Define the lip line softly, then fill with the selected lip shade." },
+  ];
+  const showTint = mode === "preview";
+
+  return (
+    <div style={{background:T.bgCard,border:`1px solid ${T.accentBorder}`,padding:16,marginBottom:18,boxShadow:T.shadowGold}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:12}}>
+        <div>
+          <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:5}}>FACE MAKEUP MAP</div>
+          <div style={{fontSize:17,color:T.text,fontWeight:300,letterSpacing:1}}>Guided Zones + Palette Preview</div>
+        </div>
+        <div style={{display:"flex",background:T.bgDeep,border:`1px solid ${T.border}`,padding:3}}>
+          {[
+            ["map", "MAP"],
+            ["preview", "PREVIEW"],
+          ].map(([id, label]) => (
+            <button key={id} onClick={()=>setMode(id)}
+              style={{background:mode===id?T.accentDim:"transparent",border:"none",color:mode===id?T.accent:T.textMuted,fontSize:7,letterSpacing:2,padding:"7px 9px",cursor:"pointer",fontFamily:FF}}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{position:"relative",width:"100%",aspectRatio:"3 / 4",overflow:"hidden",background:"#000",border:`1px solid ${T.border}`,marginBottom:12}}>
+        <img src={preview} alt="Face makeup map" style={{width:"100%",height:"100%",objectFit:"cover",filter:showTint?"brightness(1.05) saturate(1.04)":"brightness(0.92)"}}/>
+        <MakeupZones mode={mode} palette={palette}/>
+        <div style={{position:"absolute",left:12,right:12,bottom:12,display:"flex",gap:6,flexWrap:"wrap",zIndex:3}}>
+          {zones.map(z => (
+            <div key={z.id} style={{display:"flex",alignItems:"center",gap:5,background:"rgba(0,0,0,0.52)",border:"1px solid rgba(255,255,255,0.14)",padding:"5px 7px",backdropFilter:"blur(8px)"}}>
+              <span style={{width:8,height:8,borderRadius:"50%",background:z.color,boxShadow:`0 0 10px ${z.color}`}}/>
+              <span style={{fontSize:7,color:"#fff",letterSpacing:1.4}}>{z.label.toUpperCase()}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr",gap:7}}>
+        {zones.map(z => (
+          <div key={z.id} style={{display:"grid",gridTemplateColumns:"74px 1fr",gap:9,alignItems:"start",background:T.accentDim,border:`1px solid ${T.border}`,padding:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:7}}>
+              <span style={{width:10,height:10,borderRadius:"50%",background:z.color,boxShadow:`0 0 12px ${z.color}`}}/>
+              <span style={{fontSize:8,color:T.accent,letterSpacing:2,textTransform:"uppercase"}}>{z.label}</span>
+            </div>
+            <div style={{fontSize:9,color:T.textSub,lineHeight:1.55}}>{z.note}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MakeupZones({ mode, palette }) {
+  const tint = mode === "preview";
+  const mapOpacity = tint ? 0 : 1;
+  const tintOpacity = tint ? 1 : 0;
+
+  const zoneStyle = (base, color, extra = {}) => ({
+    position:"absolute",
+    background: tint ? color : "transparent",
+    border: tint ? "none" : `1.5px solid ${color}`,
+    boxShadow: tint ? `0 0 28px ${color}` : `0 0 16px ${color}`,
+    opacity: tint ? extra.opacity || 0.45 : mapOpacity,
+    mixBlendMode: tint ? extra.blend || "soft-light" : "normal",
+    filter: tint ? extra.filter || "blur(10px)" : "none",
+    transition:"opacity 0.25s ease",
+    ...base,
+  });
+
+  const labelStyle = (base, color) => ({
+    position:"absolute",
+    color:"#fff",
+    background:"rgba(0,0,0,0.55)",
+    border:`1px solid ${color}`,
+    fontSize:7,
+    letterSpacing:1.8,
+    padding:"4px 6px",
+    opacity: mapOpacity,
+    transition:"opacity 0.25s ease",
+    ...base,
+  });
+
+  return (
+    <div style={{position:"absolute",inset:0,pointerEvents:"none"}}>
+      <div style={zoneStyle({top:"29%",left:"24%",width:"18%",height:"7%",borderRadius:"50%"}, palette.eye, {opacity:0.36, filter:"blur(7px)"})}/>
+      <div style={zoneStyle({top:"29%",right:"24%",width:"18%",height:"7%",borderRadius:"50%"}, palette.eye, {opacity:0.36, filter:"blur(7px)"})}/>
+      <div style={zoneStyle({top:"44%",left:"18%",width:"22%",height:"14%",borderRadius:"50%",transform:"rotate(-16deg)"}, palette.blush, {opacity:0.44, filter:"blur(13px)"})}/>
+      <div style={zoneStyle({top:"44%",right:"18%",width:"22%",height:"14%",borderRadius:"50%",transform:"rotate(16deg)"}, palette.blush, {opacity:0.44, filter:"blur(13px)"})}/>
+      <div style={zoneStyle({top:"36%",left:"10%",width:"14%",height:"32%",borderRadius:"50%",transform:"rotate(-13deg)"}, palette.contour, {opacity:0.34, filter:"blur(16px)", blend:"multiply"})}/>
+      <div style={zoneStyle({top:"36%",right:"10%",width:"14%",height:"32%",borderRadius:"50%",transform:"rotate(13deg)"}, palette.contour, {opacity:0.34, filter:"blur(16px)", blend:"multiply"})}/>
+      <div style={zoneStyle({top:"36%",left:"43%",width:"14%",height:"28%",borderRadius:"50%"}, palette.highlight, {opacity:0.32, filter:"blur(14px)", blend:"screen"})}/>
+      <div style={zoneStyle({top:"41%",left:"31%",width:"12%",height:"8%",borderRadius:"50%",transform:"rotate(-18deg)"}, palette.highlight, {opacity:0.25, filter:"blur(10px)", blend:"screen"})}/>
+      <div style={zoneStyle({top:"41%",right:"31%",width:"12%",height:"8%",borderRadius:"50%",transform:"rotate(18deg)"}, palette.highlight, {opacity:0.25, filter:"blur(10px)", blend:"screen"})}/>
+      <div style={zoneStyle({top:"64%",left:"36%",width:"28%",height:"8%",borderRadius:"50%"}, palette.lip, {opacity:0.55, filter:"blur(5px)", blend:"multiply"})}/>
+
+      <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.08)",opacity:tintOpacity,pointerEvents:"none"}}/>
+      <div style={labelStyle({top:"25%",left:"18%"}, palette.eye)}>EYESHADOW</div>
+      <div style={labelStyle({top:"43%",left:"14%"}, palette.blush)}>BLUSH</div>
+      <div style={labelStyle({top:"35%",right:"9%"}, palette.contour)}>CONTOUR</div>
+      <div style={labelStyle({top:"54%",left:"45%"}, palette.highlight)}>HIGHLIGHT</div>
+      <div style={labelStyle({top:"72%",left:"38%"}, palette.lip)}>LIPS</div>
+    </div>
+  );
+}
+
 
 function Results({T, result, preview, occ, glam, onSave, onBack, onNew, onPlay}) {
   result = normalizeAnalysis(result);
@@ -1636,6 +1780,7 @@ function Results({T, result, preview, occ, glam, onSave, onBack, onNew, onPlay})
         <button onClick={onPlay} style={{width:"100%",background:T.btn,color:T.btnText,border:"none",padding:"16px",fontSize:11,letterSpacing:4,fontWeight:700,cursor:"pointer",marginBottom:18,boxShadow:T.shadowGold,display:"flex",alignItems:"center",justifyContent:"center",gap:10,fontFamily:FF}}>
           <span style={{fontSize:16}}>🎬</span> WATCH GUIDED TUTORIAL
         </button>
+        <FaceMakeupPreview T={T} result={result} preview={preview}/>
         <AIFaceAnalysisCard T={T} result={result}/>
         <div style={{fontSize:8,letterSpacing:4,color:T.accent,marginBottom:10}}>STEP-BY-STEP TUTORIAL</div>
         <div style={{display:"flex",gap:5,marginBottom:11,flexWrap:"wrap"}}>
