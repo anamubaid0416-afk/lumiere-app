@@ -135,6 +135,111 @@ const SHADE_COLORS = {
   "Warm Brown": "#8b4513",
 };
 
+const MAKEUP_ZONE_COLORS = {
+  blush: "#e58aa1",
+  contour: "#7a4a32",
+  highlight: "#f8e6b0",
+  eyeshadow: "#9a6a87",
+  lipstick: "#9f2f4f",
+};
+
+const MAKEUP_PALETTES = {
+  eyeshadow: [
+    {
+      id: "soft-romance",
+      label: "Soft Romance",
+      shades: [
+        { name:"Champagne Veil", color:"#f4dfbf" },
+        { name:"Rose Quartz", color:"#d59aae" },
+        { name:"Mauve Silk", color:"#a76b87" },
+        { name:"Taupe Whisper", color:"#8d7a73" },
+        { name:"Soft Cocoa", color:"#7b5545" },
+        { name:"Pearl Glow", color:"#fff0d8" },
+        { name:"Blush Smoke", color:"#b77c8e" },
+        { name:"Deep Plum", color:"#573047" },
+      ],
+    },
+    {
+      id: "golden-bronze",
+      label: "Golden Bronze",
+      shades: [
+        { name:"Soft Gold", color:"#e7c76f" },
+        { name:"Bronze Beam", color:"#b87734" },
+        { name:"Warm Brown", color:"#8b4e2d" },
+        { name:"Copper Glow", color:"#b9623b" },
+        { name:"Sandstone", color:"#c9a16f" },
+        { name:"Honey Shimmer", color:"#d99c48" },
+        { name:"Walnut", color:"#5c3a2c" },
+        { name:"Espresso Smoke", color:"#39251f" },
+      ],
+    },
+    {
+      id: "night-glam",
+      label: "Night Glam",
+      shades: [
+        { name:"Moonlit Silver", color:"#c9ccd4" },
+        { name:"Smoked Mauve", color:"#765468" },
+        { name:"Graphite", color:"#4a4a50" },
+        { name:"Black Smoke", color:"#232326" },
+        { name:"Mulberry", color:"#742d4a" },
+        { name:"Antique Gold", color:"#b49048" },
+        { name:"Chocolate", color:"#4b2f27" },
+        { name:"Ivory Spark", color:"#f7edd6" },
+      ],
+    },
+  ],
+  blush: [
+    { name:"Peach Bloom", color:"#f09a80" },
+    { name:"Rose Petal", color:"#d87893" },
+    { name:"Soft Coral", color:"#ec7f78" },
+    { name:"Mauve Flush", color:"#b86f89" },
+  ],
+  lipstick: [
+    { name:"Peach Nude", color:"#c77c62" },
+    { name:"Rose Nude", color:"#b86c78" },
+    { name:"Mauve Pink", color:"#a85e7c" },
+    { name:"Soft Berry", color:"#8f3658" },
+    { name:"Classic Red", color:"#b01f35" },
+    { name:"Coral Kiss", color:"#d85c51" },
+    { name:"Brown Nude", color:"#8b5849" },
+    { name:"Plum Veil", color:"#68314d" },
+    { name:"Pink Gloss", color:"#d8849a" },
+    { name:"Deep Rose", color:"#934657" },
+  ],
+  highlighter: [
+    { name:"Champagne", color:"#f7e7ce" },
+    { name:"Soft Gold", color:"#e8ca78" },
+    { name:"Pearl", color:"#fff1e0" },
+  ],
+  contour: [
+    { name:"Soft Taupe", color:"#7f6758" },
+    { name:"Neutral Brown", color:"#76503d" },
+    { name:"Deep Cocoa", color:"#50362b" },
+  ],
+  bronzer: [
+    { name:"Honey Bronze", color:"#b87840" },
+    { name:"Terracotta", color:"#a85a35" },
+    { name:"Golden Tan", color:"#c48b4a" },
+  ],
+  concealer: [
+    { name:"Light Neutral", color:"#f0c9a5" },
+    { name:"Medium Peach", color:"#d9a06f" },
+    { name:"Deep Golden", color:"#a66a42" },
+  ],
+};
+
+const DEFAULT_MAKEUP_SELECTION = {
+  eyeshadowPalette: "soft-romance",
+  eyeshadowShade: "Mauve Silk",
+  blush: "Rose Petal",
+  lipstick: "Rose Nude",
+  highlighter: "Champagne",
+  contour: "Neutral Brown",
+  bronzer: "Honey Bronze",
+  concealer: "Medium Peach",
+  weddingLight: "day",
+};
+
 const SKIN_TONE_TIPS = {
   Fair: "Soft pink, peach, champagne, and rose nude will look fresh.",
   Light: "Peach, rose, mauve, bronze, and coral will create balanced warmth.",
@@ -200,6 +305,325 @@ const STEP_OVERLAYS = {
 
 const FF = "'Palatino Linotype','Book Antiqua',Palatino,serif";
 
+const DEFAULT_TUTORIAL = {
+  step1: { title: "Skin Prep", instruction: "Cleanse, moisturize, and let skin care settle before makeup. Use a primer matched to your skin type." },
+  step2: { title: "Foundation", instruction: "Apply thin layers from the center of the face outward, keeping coverage light where your skin already looks even." },
+  step3: { title: "Contour", instruction: "Add soft definition under the cheekbones, around the hairline, and lightly under the jaw, then blend until there are no edges." },
+  step4: { title: "Blush", instruction: "Place blush where your cheeks naturally lift, blending slightly upward for a fresh, balanced finish." },
+  step5: { title: "Eye Makeup", instruction: "Use your mid-tone shade through the crease, deepen the outer corner, and brighten the inner corner or lid center." },
+  step6: { title: "Brows", instruction: "Brush brows upward, fill only sparse areas, and keep the front of the brow softer than the arch and tail." },
+  step7: { title: "Lips", instruction: "Define the lip line softly, blend inward, then apply lipstick or gloss that matches the chosen palette." },
+  step8: { title: "Setting", instruction: "Set only the areas that crease or get shiny, then mist lightly so the look stays fresh instead of heavy." },
+};
+
+function normalizeAnalysis(raw) {
+  if (!raw) return null;
+  const faceDNA = raw.faceDNA || {};
+  const skinTone = faceDNA.skinTone || {};
+  const placement = faceDNA.placementMap || {};
+  const palette = Array.isArray(faceDNA.paletteFamily) ? faceDNA.paletteFamily : [];
+
+  return {
+    ...raw,
+    lookName: raw.lookName || "Personalized Lumiere Look",
+    faceDNA,
+    tutorial: raw.tutorial && Object.keys(raw.tutorial).length ? raw.tutorial : DEFAULT_TUTORIAL,
+    faceShape: raw.faceShape || faceDNA.faceShape?.value || "",
+    skinTone: raw.skinTone || [skinTone.depth, skinTone.undertone].filter(Boolean).join(" ") || "",
+    undertone: raw.undertone || skinTone.undertone || "",
+    eyeShape: raw.eyeShape || faceDNA.eyeStructure?.value || "",
+    jawline: raw.jawline || placement.contour || "",
+    cheekbones: raw.cheekbones || placement.blush || "",
+    features: raw.features || [
+      faceDNA.eyeStructure?.value && `Eyes: ${faceDNA.eyeStructure.value}`,
+      faceDNA.browStructure?.value && `Brows: ${faceDNA.browStructure.value}`,
+      faceDNA.lipStructure?.value && `Lips: ${faceDNA.lipStructure.value}`,
+    ].filter(Boolean),
+    products: raw.products || palette.slice(0, 4).map((shade) => ({
+      name: "Palette shade",
+      shade,
+      why: "Selected by the Face DNA analysis for this occasion and glam level.",
+    })),
+    proTip: raw.proTip || raw.fourOutcomes?.featureHighlight || placement.highlight || "Blend in thin layers and keep the strongest detail on your best feature.",
+  };
+}
+
+function colorForShade(shade, fallback) {
+  if (!shade) return fallback;
+  return SHADE_COLORS[shade] || fallback;
+}
+
+function getPreviewPalette(result) {
+  const palette = Array.isArray(result?.faceDNA?.paletteFamily) ? result.faceDNA.paletteFamily : [];
+  const products = Array.isArray(result?.products) ? result.products : [];
+  const productShades = products.map(p => p?.shade).filter(Boolean);
+  const shades = [...palette, ...productShades];
+
+  return {
+    lip: colorForShade(shades.find(s => /berry|mauve|rose|pink|coral|red|nude/i.test(s)), MAKEUP_ZONE_COLORS.lipstick),
+    blush: colorForShade(shades.find(s => /peach|coral|rose|pink|mauve/i.test(s)), MAKEUP_ZONE_COLORS.blush),
+    eye: colorForShade(shades.find(s => /brown|bronze|gold|taupe|mauve|rose/i.test(s)), MAKEUP_ZONE_COLORS.eyeshadow),
+    highlight: colorForShade(shades.find(s => /champagne|gold|highlight|soft gold/i.test(s)), MAKEUP_ZONE_COLORS.highlight),
+    contour: colorForShade(shades.find(s => /brown|bronze|taupe/i.test(s)), MAKEUP_ZONE_COLORS.contour),
+  };
+}
+
+function flattenMakeupShades(group) {
+  if (group === "eyeshadow") return MAKEUP_PALETTES.eyeshadow.flatMap(p => p.shades);
+  return MAKEUP_PALETTES[group] || [];
+}
+
+function getNamedColor(group, name, fallback) {
+  const shade = flattenMakeupShades(group).find(s => s.name === name);
+  return shade?.color || fallback;
+}
+
+function suggestMakeupSelection({ result, occ, glam }) {
+  const paletteText = [
+    ...(Array.isArray(result?.faceDNA?.paletteFamily) ? result.faceDNA.paletteFamily : []),
+    result?.lookName || "",
+    occ?.label || "",
+    glam || "",
+  ].join(" ").toLowerCase();
+
+  const selection = { ...DEFAULT_MAKEUP_SELECTION };
+  if (/bronze|gold|tan|outdoor|graduation|party/.test(paletteText)) {
+    selection.eyeshadowPalette = "golden-bronze";
+    selection.eyeshadowShade = "Bronze Beam";
+    selection.blush = "Soft Coral";
+    selection.lipstick = "Coral Kiss";
+    selection.highlighter = "Soft Gold";
+    selection.bronzer = "Golden Tan";
+  }
+  if (/night|party|date|deep|plum|berry|smoke/.test(paletteText)) {
+    selection.eyeshadowPalette = "night-glam";
+    selection.eyeshadowShade = "Smoked Mauve";
+    selection.blush = "Mauve Flush";
+    selection.lipstick = "Soft Berry";
+    selection.highlighter = "Champagne";
+    selection.contour = "Deep Cocoa";
+  }
+  if (/wedding/.test(paletteText)) {
+    selection.weddingLight = "day";
+    selection.eyeshadowPalette = "soft-romance";
+    selection.eyeshadowShade = "Rose Quartz";
+    selection.blush = "Rose Petal";
+    selection.lipstick = "Rose Nude";
+  }
+  if (glam === "full") {
+    selection.contour = "Deep Cocoa";
+    selection.lipstick = selection.lipstick === "Rose Nude" ? "Deep Rose" : selection.lipstick;
+  }
+  return selection;
+}
+
+function colorsFromSelection(selection) {
+  return {
+    eyeshadow:getNamedColor("eyeshadow", selection.eyeshadowShade, MAKEUP_ZONE_COLORS.eyeshadow),
+    blush:getNamedColor("blush", selection.blush, MAKEUP_ZONE_COLORS.blush),
+    lipstick:getNamedColor("lipstick", selection.lipstick, MAKEUP_ZONE_COLORS.lipstick),
+    highlighter:getNamedColor("highlighter", selection.highlighter, MAKEUP_ZONE_COLORS.highlight),
+    contour:getNamedColor("contour", selection.contour, MAKEUP_ZONE_COLORS.contour),
+    bronzer:getNamedColor("bronzer", selection.bronzer, "#b87840"),
+    concealer:getNamedColor("concealer", selection.concealer, "#d9a06f"),
+  };
+}
+
+const FACE_OVAL = [10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109];
+const OUTER_LIPS = [61,185,40,39,37,0,267,269,270,409,291,375,321,405,314,17,84,181,91,146];
+const LEFT_EYE_AREA = [33,246,161,160,159,158,157,173,133,155,154,153,145,144,163,7];
+const RIGHT_EYE_AREA = [263,466,388,387,386,385,384,398,362,382,381,380,374,373,390,249];
+const LEFT_CHEEK = [117,123,147,187,207,205,50,101];
+const RIGHT_CHEEK = [346,352,376,411,427,425,280,330];
+const LEFT_UNDER_EYE = [226,113,225,224,223,222,221,189,244,245,233,232];
+const RIGHT_UNDER_EYE = [446,342,445,444,443,442,441,413,464,465,453,452];
+const FOREHEAD_CENTER = [10,109,67,103,54,151,284,332,297,338];
+const NOSE_BRIDGE = [168,6,197,195,5,4,1,2];
+const CHIN_CENTER = [18,200,199,175,152,377,400,378];
+
+let faceLandmarkerPromise;
+let segmenterPromise;
+
+async function getFaceLandmarker() {
+  if (!faceLandmarkerPromise) {
+    faceLandmarkerPromise = (async () => {
+      const { FaceLandmarker, FilesetResolver } = await import("@mediapipe/tasks-vision");
+      const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm");
+      return FaceLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task",
+          delegate: "GPU",
+        },
+        runningMode: "IMAGE",
+        numFaces: 1,
+      });
+    })();
+  }
+  return faceLandmarkerPromise;
+}
+
+async function getSkinSegmenter() {
+  if (!segmenterPromise) {
+    segmenterPromise = (async () => {
+      const tf = await import("@tensorflow/tfjs-core");
+      await import("@tensorflow/tfjs-backend-webgl");
+      await import("@tensorflow/tfjs-converter");
+      await tf.setBackend("webgl");
+      await tf.ready();
+      const bodySegmentation = await import("@tensorflow-models/body-segmentation");
+      return bodySegmentation.createSegmenter(bodySegmentation.SupportedModels.MediaPipeSelfieSegmentation, {
+        runtime: "tfjs",
+        modelType: "general",
+      });
+    })();
+  }
+  return segmenterPromise;
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+function pointsFromLandmarks(landmarks, ids, width, height) {
+  return ids.map(id => {
+    const p = landmarks[id];
+    return p ? { x:p.x * width, y:p.y * height } : null;
+  }).filter(Boolean);
+}
+
+function drawPolygon(ctx, points, { fill, stroke, lineWidth = 2, alpha = 1, close = true, dotted = false }) {
+  if (!points.length) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  points.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+  if (close) ctx.closePath();
+  if (dotted) ctx.setLineDash([6, 6]);
+  if (fill) {
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+  if (stroke) {
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawSoftPolygon(ctx, points, color, alpha = 0.35, blur = 14, blend = "soft-light") {
+  if (!points.length) return;
+  ctx.save();
+  ctx.globalCompositeOperation = blend;
+  ctx.filter = `blur(${blur}px)`;
+  drawPolygon(ctx, points, { fill:color, alpha });
+  ctx.restore();
+}
+
+function drawLandmarkPath(ctx, landmarks, ids, width, height, color, options = {}) {
+  const pts = pointsFromLandmarks(landmarks, ids, width, height);
+  drawSoftPolygon(ctx, pts, color, options.alpha, options.blur, options.blend);
+}
+
+function drawLabel(ctx, text, x, y, color) {
+  ctx.save();
+  ctx.font = "700 18px Palatino, serif";
+  ctx.textBaseline = "middle";
+  const pad = 8;
+  const w = ctx.measureText(text).width + pad * 2;
+  ctx.fillStyle = "rgba(0,0,0,0.58)";
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.fillRect(x, y - 15, w, 30);
+  ctx.strokeRect(x, y - 15, w, 30);
+  ctx.setLineDash([]);
+  ctx.fillStyle = "#fff";
+  ctx.fillText(text, x + pad, y);
+  ctx.restore();
+}
+
+function clipToMask(ctx, drawFn, maskCanvas, facePoints, width, height) {
+  const layer = document.createElement("canvas");
+  layer.width = width;
+  layer.height = height;
+  const lctx = layer.getContext("2d");
+  drawFn(lctx);
+  lctx.globalCompositeOperation = "destination-in";
+  if (maskCanvas) lctx.drawImage(maskCanvas, 0, 0, width, height);
+  else drawPolygon(lctx, facePoints, { fill:"#fff" });
+  ctx.drawImage(layer, 0, 0);
+}
+
+async function createSegmentationMask(image) {
+  try {
+    const segmenter = await getSkinSegmenter();
+    const people = await segmenter.segmentPeople(image);
+    if (!people?.length) return null;
+    const bodySegmentation = await import("@tensorflow-models/body-segmentation");
+    const mask = await bodySegmentation.toBinaryMask(people, { r:0, g:0, b:0, a:0 }, { r:255, g:255, b:255, a:255 });
+    const canvas = document.createElement("canvas");
+    canvas.width = mask.width;
+    canvas.height = mask.height;
+    canvas.getContext("2d").putImageData(mask, 0, 0);
+    return canvas;
+  } catch (error) {
+    console.warn("Segmentation unavailable, falling back to face oval mask.", error);
+    return null;
+  }
+}
+
+function drawMakeupApplication(ctx, landmarks, colors, width, height, maskCanvas, withGuide = false) {
+  const facePoints = pointsFromLandmarks(landmarks, FACE_OVAL, width, height);
+
+  clipToMask(ctx, (layer) => {
+    drawLandmarkPath(layer, landmarks, FOREHEAD_CENTER, width, height, colors.concealer, { alpha:0.18, blur:18, blend:"screen" });
+    drawLandmarkPath(layer, landmarks, NOSE_BRIDGE, width, height, colors.concealer, { alpha:0.18, blur:13, blend:"screen" });
+    drawLandmarkPath(layer, landmarks, CHIN_CENTER, width, height, colors.concealer, { alpha:0.14, blur:16, blend:"screen" });
+    drawLandmarkPath(layer, landmarks, LEFT_UNDER_EYE, width, height, colors.concealer, { alpha:0.2, blur:13, blend:"screen" });
+    drawLandmarkPath(layer, landmarks, RIGHT_UNDER_EYE, width, height, colors.concealer, { alpha:0.2, blur:13, blend:"screen" });
+
+    drawLandmarkPath(layer, landmarks, [127,234,93,132,58,172,136,150,149], width, height, colors.contour, { alpha:0.28, blur:18, blend:"multiply" });
+    drawLandmarkPath(layer, landmarks, [356,454,323,361,288,397,365,379,378], width, height, colors.contour, { alpha:0.28, blur:18, blend:"multiply" });
+    drawLandmarkPath(layer, landmarks, [70,63,105,66,107,9,336,296,334,293,300], width, height, colors.bronzer, { alpha:0.2, blur:20, blend:"multiply" });
+    drawLandmarkPath(layer, landmarks, [111,117,118,119,120,100,47], width, height, colors.bronzer, { alpha:0.18, blur:16, blend:"multiply" });
+    drawLandmarkPath(layer, landmarks, [340,346,347,348,349,329,277], width, height, colors.bronzer, { alpha:0.18, blur:16, blend:"multiply" });
+
+    drawLandmarkPath(layer, landmarks, LEFT_CHEEK, width, height, colors.blush, { alpha:0.34, blur:15, blend:"soft-light" });
+    drawLandmarkPath(layer, landmarks, RIGHT_CHEEK, width, height, colors.blush, { alpha:0.34, blur:15, blend:"soft-light" });
+    drawLandmarkPath(layer, landmarks, LEFT_EYE_AREA, width, height, colors.eyeshadow, { alpha:0.28, blur:8, blend:"multiply" });
+    drawLandmarkPath(layer, landmarks, RIGHT_EYE_AREA, width, height, colors.eyeshadow, { alpha:0.28, blur:8, blend:"multiply" });
+    drawLandmarkPath(layer, landmarks, [50,101,118,117], width, height, colors.highlighter, { alpha:0.17, blur:12, blend:"screen" });
+    drawLandmarkPath(layer, landmarks, [280,330,347,346], width, height, colors.highlighter, { alpha:0.17, blur:12, blend:"screen" });
+  }, maskCanvas, facePoints, width, height);
+
+  const lips = pointsFromLandmarks(landmarks, OUTER_LIPS, width, height);
+  ctx.save();
+  ctx.globalCompositeOperation = "multiply";
+  drawPolygon(ctx, lips, { fill:colors.lipstick, alpha:0.55 });
+  ctx.restore();
+
+  if (withGuide) {
+    const guideItems = [
+      ["Concealer", [...pointsFromLandmarks(landmarks, LEFT_UNDER_EYE, width, height), ...pointsFromLandmarks(landmarks, RIGHT_UNDER_EYE, width, height)], colors.concealer, width * 0.13, height * 0.28],
+      ["Contour", pointsFromLandmarks(landmarks, [127,234,93,132,58,172,136,150,149], width, height), colors.contour, width * 0.08, height * 0.58],
+      ["Bronzer", pointsFromLandmarks(landmarks, [70,63,105,66,107,9,336,296,334,293,300], width, height), colors.bronzer, width * 0.55, height * 0.16],
+      ["Blush", pointsFromLandmarks(landmarks, LEFT_CHEEK, width, height), colors.blush, width * 0.14, height * 0.45],
+    ];
+    guideItems.forEach(([label, pts, color, x, y]) => {
+      drawPolygon(ctx, pts, { stroke:color, lineWidth:3, dotted:true, alpha:0.95 });
+      drawLabel(ctx, label, x, y, color);
+    });
+  }
+}
+
 // ─── STORAGE ─────────────────────────────────────────────────
 const STORAGE = {
   load(key, fallback) {
@@ -222,7 +646,7 @@ export default function Lumiere() {
   const [scans, setScans] = useState({});
   const [glam, setGlam] = useState("medium");
   const [occ, setOcc] = useState(null);
-  const [result, setResult] = useState(() => STORAGE.load('lastResult', null));
+  const [result, setResult] = useState(() => normalizeAnalysis(STORAGE.load('lastResult', null)));
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState("home");
   const [looks, setLooks] = useState(() => STORAGE.load('looks', []));
@@ -278,31 +702,33 @@ export default function Lumiere() {
         }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       console.log("API RESPONSE:", data);
 
       if (!res.ok) {
         console.error("API ERROR:", data);
-        notify("Analysis failed. Please check Vercel logs.");
+        notify(data?.error || "Analysis failed. Please try a fresh scan.");
         setLoading(false);
         return;
       }
 
+      const normalized = normalizeAnalysis(data);
+
       const scanEntry = {
         id: "scan_" + Date.now(),
         date: new Date().toISOString(),
-        analysis: data,
+        analysis: normalized,
         primaryFace: scans.front,
       };
 
       setScanHistory(p => [scanEntry, ...p].slice(0, 10));
-      setResult(data);
+      setResult(normalized);
 
       // Go to the dedicated Results screen.
       setScreen("results");
     } catch (error) {
       console.error("Analyze error:", error);
-      notify("Network error. Please try again.");
+      notify(error?.message || "Network error. Please try again.");
     }
 
     setLoading(false);
@@ -331,8 +757,7 @@ export default function Lumiere() {
   if (screen==="onboard") return <Onboard T={DARK} profile={profile} setProfile={setProfile} step={pStep} setStep={setPStep} done={()=>setScreen("main")}/>;
   if (screen==="camera") return <CameraScan T={T} scans={scans} setScans={setScans} onDone={()=>setScreen("main")} onCancel={()=>setScreen("main")} notify={notify}/>;
   if (screen==="player") return <TutorialPlayer T={T} result={result} preview={primaryFace} occ={OCCS.find(o=>o.id===occ)} glam={glam} onClose={()=>setScreen("results")} />;
-  if (screen==="results") return <Results T={T} result={result} preview={primaryFace} occ={OCCS.find(o=>o.id===occ)} glam={glam} onSave={saveLook} onBack={()=>setScreen("main")} onNew={()=>{setResult(null); setScreen("main"); setTab("scan");}} onPlay={()=>setScreen("player")} onApply={()=>setScreen("applyLook")}/>;
-  if (screen==="applyLook") return <ApplyLookScreen T={T} result={result} scans={scans} preview={primaryFace} onClose={()=>setScreen("results")}/>;
+  if (screen==="results") return <Results T={T} result={result} preview={primaryFace} scans={scans} occ={OCCS.find(o=>o.id===occ)} glam={glam} onSave={saveLook} onBack={()=>setScreen("main")} onNew={()=>{setResult(null); setScreen("main"); setTab("scan");}} onPlay={()=>setScreen("player")}/>;
 
   return (
     <Shell T={T} manual={manual} setManual={setManual} occ={occ} profile={profile} tab={tab} setTab={setTab} notif={notif} events={events}>
@@ -718,12 +1143,12 @@ function formatDate(dateStr) {
 
 // ─── TUTORIAL PLAYER ─────────────────────────────────────────
 function TutorialPlayer({ T, result, preview, occ, glam, onClose }) {
+  result = normalizeAnalysis(result);
   const [stepIdx, setStepIdx] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [progress, setProgress] = useState(0);
   const utteranceRef = useRef(null);
   const progressRef = useRef(null);
-      <AIFaceAnalysisCard T={T} result={result}/>
 
   const steps = result ? Object.entries(result.tutorial).map(([key, val]) => ({ key, ...val })) : [];
   const currentStep = steps[stepIdx];
@@ -878,12 +1303,13 @@ function CameraScan({ T, scans, setScans, onDone, onCancel, notify }) {
     if (!videoRef.current || !canvasRef.current) return null;
     const video = videoRef.current; const canvas = canvasRef.current;
     const size = Math.min(video.videoWidth, video.videoHeight);
-    canvas.width = size; canvas.height = size;
+    const outputSize = Math.min(size, 768);
+    canvas.width = outputSize; canvas.height = outputSize;
     const ctx = canvas.getContext("2d");
     const sx = (video.videoWidth - size) / 2; const sy = (video.videoHeight - size) / 2;
-    ctx.translate(size, 0); ctx.scale(-1, 1);
-    ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size);
-    return canvas.toDataURL("image/jpeg", 0.9);
+    ctx.translate(outputSize, 0); ctx.scale(-1, 1);
+    ctx.drawImage(video, sx, sy, size, size, 0, 0, outputSize, outputSize);
+    return canvas.toDataURL("image/jpeg", 0.72);
   }, []);
 
   const handleCapture = useCallback(() => {
@@ -1449,6 +1875,14 @@ function AIFaceAnalysisCard({ T, result }) {
   const dna = result.faceDNA;
   const placement = dna.placementMap || {};
   const palette = Array.isArray(dna.paletteFamily) ? dna.paletteFamily : [];
+  const orientation = dna.orientation || {};
+  const orientationRows = [
+    ["Front", orientation.front],
+    ["Left", orientation.left],
+    ["Right", orientation.right],
+    ["Chin Up", orientation.up],
+    ["Chin Down", orientation.down],
+  ].filter(([, value]) => value);
 
   return (
     <div style={{background:T.bgCard,border:`1px solid ${T.accentBorder}`,padding:16,margin:"18px 0",boxShadow:T.shadowGold}}>
@@ -1479,6 +1913,17 @@ function AIFaceAnalysisCard({ T, result }) {
         <div style={{background:T.bgDeep,border:`1px solid ${T.border}`,padding:12,marginBottom:12,fontSize:10,color:T.textSub,lineHeight:1.7}}>
           <span style={{color:T.accent}}>Why:</span> {dna.faceShape.reason}
         </div>
+      )}
+
+      {orientationRows.length > 0 && (
+        <>
+          <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:8}}>ANGLE-BY-ANGLE NOTES</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:8,marginBottom:12}}>
+            {orientationRows.map(([label, value]) => (
+              <MiniInsight key={label} T={T} label={label} value={value} />
+            ))}
+          </div>
+        </>
       )}
 
       <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:8}}>PLACEMENT MAP</div>
@@ -1539,8 +1984,263 @@ function OutcomeLine({ T, title, text }) {
   );
 }
 
+function FaceMakeupPreview({ T, result, preview }) {
+  const [mode, setMode] = useState("map");
+  if (!preview) return null;
 
-function Results({T, result, preview, occ, glam, onSave, onBack, onNew, onPlay, onApply}) {
+  const palette = getPreviewPalette(result);
+  const placement = result?.faceDNA?.placementMap || {};
+  const zones = [
+    { id:"contour", label:"Contour", color:palette.contour, note:placement.contour || "Softly define the outer face, cheek hollow, and jawline." },
+    { id:"blush", label:"Blush", color:palette.blush, note:placement.blush || "Place color on the lifted cheek area and blend upward." },
+    { id:"highlight", label:"Highlight", color:palette.highlight, note:placement.highlight || "Add glow to high points: cheek tops, nose bridge, and center glow zones." },
+    { id:"eyeshadow", label:"Eyeshadow", color:palette.eye, note:placement.eyeshadow || "Keep depth around the lid and outer eye, then brighten where the eye opens." },
+    { id:"lipstick", label:"Lipstick", color:palette.lip, note:placement.lips || "Define the lip line softly, then fill with the selected lip shade." },
+  ];
+  const showTint = mode === "preview";
+
+  return (
+    <div style={{background:T.bgCard,border:`1px solid ${T.accentBorder}`,padding:16,marginBottom:18,boxShadow:T.shadowGold}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:12}}>
+        <div>
+          <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:5}}>FACE MAKEUP MAP</div>
+          <div style={{fontSize:17,color:T.text,fontWeight:300,letterSpacing:1}}>Guided Zones + Palette Preview</div>
+        </div>
+        <div style={{display:"flex",background:T.bgDeep,border:`1px solid ${T.border}`,padding:3}}>
+          {[
+            ["map", "MAP"],
+            ["preview", "PREVIEW"],
+          ].map(([id, label]) => (
+            <button key={id} onClick={()=>setMode(id)}
+              style={{background:mode===id?T.accentDim:"transparent",border:"none",color:mode===id?T.accent:T.textMuted,fontSize:7,letterSpacing:2,padding:"7px 9px",cursor:"pointer",fontFamily:FF}}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{position:"relative",width:"100%",aspectRatio:"3 / 4",overflow:"hidden",background:"#000",border:`1px solid ${T.border}`,marginBottom:12}}>
+        <img src={preview} alt="Face makeup map" style={{width:"100%",height:"100%",objectFit:"cover",filter:showTint?"brightness(1.05) saturate(1.04)":"brightness(0.92)"}}/>
+        <MakeupZones mode={mode} palette={palette}/>
+        <div style={{position:"absolute",left:12,right:12,bottom:12,display:"flex",gap:6,flexWrap:"wrap",zIndex:3}}>
+          {zones.map(z => (
+            <div key={z.id} style={{display:"flex",alignItems:"center",gap:5,background:"rgba(0,0,0,0.52)",border:"1px solid rgba(255,255,255,0.14)",padding:"5px 7px",backdropFilter:"blur(8px)"}}>
+              <span style={{width:8,height:8,borderRadius:"50%",background:z.color,boxShadow:`0 0 10px ${z.color}`}}/>
+              <span style={{fontSize:7,color:"#fff",letterSpacing:1.4}}>{z.label.toUpperCase()}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr",gap:7}}>
+        {zones.map(z => (
+          <div key={z.id} style={{display:"grid",gridTemplateColumns:"74px 1fr",gap:9,alignItems:"start",background:T.accentDim,border:`1px solid ${T.border}`,padding:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:7}}>
+              <span style={{width:10,height:10,borderRadius:"50%",background:z.color,boxShadow:`0 0 12px ${z.color}`}}/>
+              <span style={{fontSize:8,color:T.accent,letterSpacing:2,textTransform:"uppercase"}}>{z.label}</span>
+            </div>
+            <div style={{fontSize:9,color:T.textSub,lineHeight:1.55}}>{z.note}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MakeupZones({ mode, palette }) {
+  const tint = mode === "preview";
+  const mapOpacity = tint ? 0 : 1;
+  const tintOpacity = tint ? 1 : 0;
+
+  const zoneStyle = (base, color, extra = {}) => ({
+    position:"absolute",
+    background: tint ? color : "transparent",
+    border: tint ? "none" : `1.5px solid ${color}`,
+    boxShadow: tint ? `0 0 28px ${color}` : `0 0 16px ${color}`,
+    opacity: tint ? extra.opacity || 0.45 : mapOpacity,
+    mixBlendMode: tint ? extra.blend || "soft-light" : "normal",
+    filter: tint ? extra.filter || "blur(10px)" : "none",
+    transition:"opacity 0.25s ease",
+    ...base,
+  });
+
+  const labelStyle = (base, color) => ({
+    position:"absolute",
+    color:"#fff",
+    background:"rgba(0,0,0,0.55)",
+    border:`1px solid ${color}`,
+    fontSize:7,
+    letterSpacing:1.8,
+    padding:"4px 6px",
+    opacity: mapOpacity,
+    transition:"opacity 0.25s ease",
+    ...base,
+  });
+
+  return (
+    <div style={{position:"absolute",inset:0,pointerEvents:"none"}}>
+      <div style={zoneStyle({top:"29%",left:"24%",width:"18%",height:"7%",borderRadius:"50%"}, palette.eye, {opacity:0.36, filter:"blur(7px)"})}/>
+      <div style={zoneStyle({top:"29%",right:"24%",width:"18%",height:"7%",borderRadius:"50%"}, palette.eye, {opacity:0.36, filter:"blur(7px)"})}/>
+      <div style={zoneStyle({top:"44%",left:"18%",width:"22%",height:"14%",borderRadius:"50%",transform:"rotate(-16deg)"}, palette.blush, {opacity:0.44, filter:"blur(13px)"})}/>
+      <div style={zoneStyle({top:"44%",right:"18%",width:"22%",height:"14%",borderRadius:"50%",transform:"rotate(16deg)"}, palette.blush, {opacity:0.44, filter:"blur(13px)"})}/>
+      <div style={zoneStyle({top:"36%",left:"10%",width:"14%",height:"32%",borderRadius:"50%",transform:"rotate(-13deg)"}, palette.contour, {opacity:0.34, filter:"blur(16px)", blend:"multiply"})}/>
+      <div style={zoneStyle({top:"36%",right:"10%",width:"14%",height:"32%",borderRadius:"50%",transform:"rotate(13deg)"}, palette.contour, {opacity:0.34, filter:"blur(16px)", blend:"multiply"})}/>
+      <div style={zoneStyle({top:"36%",left:"43%",width:"14%",height:"28%",borderRadius:"50%"}, palette.highlight, {opacity:0.32, filter:"blur(14px)", blend:"screen"})}/>
+      <div style={zoneStyle({top:"41%",left:"31%",width:"12%",height:"8%",borderRadius:"50%",transform:"rotate(-18deg)"}, palette.highlight, {opacity:0.25, filter:"blur(10px)", blend:"screen"})}/>
+      <div style={zoneStyle({top:"41%",right:"31%",width:"12%",height:"8%",borderRadius:"50%",transform:"rotate(18deg)"}, palette.highlight, {opacity:0.25, filter:"blur(10px)", blend:"screen"})}/>
+      <div style={zoneStyle({top:"64%",left:"36%",width:"28%",height:"8%",borderRadius:"50%"}, palette.lip, {opacity:0.55, filter:"blur(5px)", blend:"multiply"})}/>
+
+      <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.08)",opacity:tintOpacity,pointerEvents:"none"}}/>
+      <div style={labelStyle({top:"25%",left:"18%"}, palette.eye)}>EYESHADOW</div>
+      <div style={labelStyle({top:"43%",left:"14%"}, palette.blush)}>BLUSH</div>
+      <div style={labelStyle({top:"35%",right:"9%"}, palette.contour)}>CONTOUR</div>
+      <div style={labelStyle({top:"54%",left:"45%"}, palette.highlight)}>HIGHLIGHT</div>
+      <div style={labelStyle({top:"72%",left:"38%"}, palette.lip)}>LIPS</div>
+    </div>
+  );
+}
+
+function MediaPipeMakeupStudio({ T, result, scans, occ, glam }) {
+  const frontCanvasRef = useRef(null);
+  const sideCanvasRef = useRef(null);
+  const guideCanvasRef = useRef(null);
+  const [status, setStatus] = useState("Loading face models...");
+  const [selection, setSelection] = useState(() => suggestMakeupSelection({ result, occ, glam }));
+
+  const front = scans?.front || null;
+  const side = scans?.left || scans?.right || null;
+  const isWedding = occ?.id === "wedding";
+  const selectedPalette = MAKEUP_PALETTES.eyeshadow.find(p => p.id === selection.eyeshadowPalette) || MAKEUP_PALETTES.eyeshadow[0];
+  const colors = colorsFromSelection(selection);
+
+  useEffect(() => {
+    setSelection(suggestMakeupSelection({ result, occ, glam }));
+  }, [result, occ?.id, glam]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function renderOne(src, canvas, guide = false) {
+      if (!src || !canvas) return false;
+      const image = await loadImage(src);
+      const maxW = 900;
+      const scale = Math.min(1, maxW / image.naturalWidth);
+      const width = Math.round(image.naturalWidth * scale);
+      const height = Math.round(image.naturalHeight * scale);
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, width, height);
+      ctx.drawImage(image, 0, 0, width, height);
+
+      const landmarker = await getFaceLandmarker();
+      const detection = landmarker.detect(image);
+      const landmarks = detection?.faceLandmarks?.[0];
+      if (!landmarks) {
+        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        ctx.fillRect(16, 16, 275, 34);
+        ctx.fillStyle = "#fff";
+        ctx.font = "16px Palatino, serif";
+        ctx.fillText("Face landmarks not found", 28, 39);
+        return false;
+      }
+
+      const mask = await createSegmentationMask(image);
+      drawMakeupApplication(ctx, landmarks, colors, width, height, mask, guide);
+      return true;
+    }
+
+    async function renderAll() {
+      if (!front) return;
+      setStatus("Applying landmark makeup...");
+      try {
+        const ok = await renderOne(front, frontCanvasRef.current, false);
+        if (cancelled) return;
+        await renderOne(side, sideCanvasRef.current, false);
+        if (cancelled) return;
+        await renderOne(front, guideCanvasRef.current, true);
+        if (!cancelled) setStatus(ok ? "MediaPipe makeup applied" : "Rendered with limited face detection");
+      } catch (error) {
+        console.error("Makeup renderer failed:", error);
+        if (!cancelled) setStatus("Renderer unavailable. Check deployed model dependencies.");
+      }
+    }
+
+    renderAll();
+    return () => { cancelled = true; };
+  }, [front, side, selection, result]);
+
+  if (!front) return null;
+
+  return (
+    <div style={{background:T.bgCard,border:`1px solid ${T.accentBorder}`,padding:16,marginBottom:18,boxShadow:T.shadowGold}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:12}}>
+        <div>
+          <div style={{fontSize:8,letterSpacing:3,color:T.accent,marginBottom:5}}>MEDIAPIPE MAKEUP STUDIO</div>
+          <div style={{fontSize:17,color:T.text,fontWeight:300,letterSpacing:1}}>Landmark Blending + Face Map</div>
+        </div>
+        <div style={{fontSize:8,color:T.textMuted,letterSpacing:1,textAlign:"right",lineHeight:1.5}}>{status}</div>
+      </div>
+
+      {isWedding && (
+        <div style={{display:"flex",gap:7,marginBottom:12}}>
+          {["day","night"].map(v => (
+            <button key={v} onClick={()=>setSelection(p=>({...p,weddingLight:v,eyeshadowPalette:v==="night"?"night-glam":"soft-romance",eyeshadowShade:v==="night"?"Smoked Mauve":"Rose Quartz"}))}
+              style={{flex:1,background:selection.weddingLight===v?T.accentDim:T.bgDeep,border:`1px solid ${selection.weddingLight===v?T.accent:T.border}`,color:selection.weddingLight===v?T.accent:T.textMuted,padding:"9px",fontSize:8,letterSpacing:2,textTransform:"uppercase",fontFamily:FF,cursor:"pointer"}}>
+              Wedding {v}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+        <div>
+          <div style={{fontSize:7,letterSpacing:2,color:T.accent,marginBottom:5,textTransform:"uppercase"}}>Eyeshadow Palette</div>
+          <select value={selection.eyeshadowPalette} onChange={e=>setSelection(p=>({...p,eyeshadowPalette:e.target.value,eyeshadowShade:(MAKEUP_PALETTES.eyeshadow.find(x=>x.id===e.target.value)?.shades[0]?.name || p.eyeshadowShade)}))} style={{width:"100%",background:T.bgDeep,border:`1px solid ${T.border}`,color:T.text,fontFamily:FF,fontSize:10,padding:"8px 9px",outline:"none"}}>
+            {MAKEUP_PALETTES.eyeshadow.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
+        </div>
+        <PaletteSelect label="Eyeshadow Shade" value={selection.eyeshadowShade} options={selectedPalette.shades} onChange={v=>setSelection(p=>({...p,eyeshadowShade:v}))} T={T}/>
+        <PaletteSelect label="Blush" value={selection.blush} options={MAKEUP_PALETTES.blush} onChange={v=>setSelection(p=>({...p,blush:v}))} T={T}/>
+        <PaletteSelect label="Lipstick" value={selection.lipstick} options={MAKEUP_PALETTES.lipstick} onChange={v=>setSelection(p=>({...p,lipstick:v}))} T={T}/>
+        <PaletteSelect label="Highlighter" value={selection.highlighter} options={MAKEUP_PALETTES.highlighter} onChange={v=>setSelection(p=>({...p,highlighter:v}))} T={T}/>
+        <PaletteSelect label="Contour" value={selection.contour} options={MAKEUP_PALETTES.contour} onChange={v=>setSelection(p=>({...p,contour:v}))} T={T}/>
+        <PaletteSelect label="Bronzer" value={selection.bronzer} options={MAKEUP_PALETTES.bronzer} onChange={v=>setSelection(p=>({...p,bronzer:v}))} T={T}/>
+        <PaletteSelect label="Concealer" value={selection.concealer} options={MAKEUP_PALETTES.concealer} onChange={v=>setSelection(p=>({...p,concealer:v}))} T={T}/>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr",gap:14}}>
+        <CanvasPanel T={T} title="1. Front Face With Selected Makeup" canvasRef={frontCanvasRef}/>
+        {side && <CanvasPanel T={T} title="2. Side Face With Selected Makeup" canvasRef={sideCanvasRef}/>}
+        <CanvasPanel T={T} title="3. Front Face Map: Concealer · Contour · Bronzer · Blush" canvasRef={guideCanvasRef}/>
+      </div>
+    </div>
+  );
+}
+
+function PaletteSelect({ label, value, options, onChange, T }) {
+  return (
+    <div>
+      <div style={{fontSize:7,letterSpacing:2,color:T.accent,marginBottom:5,textTransform:"uppercase"}}>{label}</div>
+      <select value={value} onChange={e=>onChange(e.target.value)} style={{width:"100%",background:T.bgDeep,border:`1px solid ${T.border}`,color:T.text,fontFamily:FF,fontSize:10,padding:"8px 9px",outline:"none"}}>
+        {options.map(o => <option key={o.name} value={o.name}>{o.name}</option>)}
+      </select>
+    </div>
+  );
+}
+
+function CanvasPanel({ T, title, canvasRef }) {
+  return (
+    <div style={{background:T.bgDeep,border:`1px solid ${T.border}`,padding:10}}>
+      <div style={{fontSize:8,letterSpacing:2,color:T.accent,marginBottom:8,textTransform:"uppercase"}}>{title}</div>
+      <canvas ref={canvasRef} style={{width:"100%",height:"auto",display:"block",background:"#000",border:`1px solid ${T.border}`}}/>
+    </div>
+  );
+}
+
+
+function Results({T, result, preview, scans, occ, glam, onSave, onBack, onNew, onPlay}) {
+  result = normalizeAnalysis(result);
   const [step, setStep] = useState(0);
   if (!result) return null;
   const steps = Object.values(result.tutorial);
@@ -1568,23 +2268,11 @@ function Results({T, result, preview, occ, glam, onSave, onBack, onNew, onPlay, 
             </div>
           </div>
         </div>
-        <button onClick={onPlay} style={{width:"100%",background:T.btn,color:T.btnText,border:"none",padding:"16px",fontSize:11,letterSpacing:4,fontWeight:700,cursor:"pointer",marginBottom:10,boxShadow:T.shadowGold,display:"flex",alignItems:"center",justifyContent:"center",gap:10,fontFamily:FF}}>
+        <button onClick={onPlay} style={{width:"100%",background:T.btn,color:T.btnText,border:"none",padding:"16px",fontSize:11,letterSpacing:4,fontWeight:700,cursor:"pointer",marginBottom:18,boxShadow:T.shadowGold,display:"flex",alignItems:"center",justifyContent:"center",gap:10,fontFamily:FF}}>
           <span style={{fontSize:16}}>🎬</span> WATCH GUIDED TUTORIAL
         </button>
-        <button onClick={onApply} style={{width:"100%",background:T.bgCard,color:T.accent,border:`1px solid ${T.accentBorderHi}`,padding:"15px",fontSize:10,letterSpacing:3,fontWeight:700,cursor:"pointer",marginBottom:18,boxShadow:T.shadowGold,display:"flex",alignItems:"center",justifyContent:"center",gap:10,fontFamily:FF}}>
-          <span style={{fontSize:16}}>💄</span> APPLY THIS LOOK ON MY FACE
-        </button>
-        <div style={{background:T.bgCard,border:`1px solid ${T.border}`,padding:15,marginBottom:17}}>
-          <div style={{fontSize:8,letterSpacing:4,color:T.accent,marginBottom:12}}>◆ FACE ANALYSIS</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:11,marginBottom:11}}>
-            {[["Face Shape",result.faceShape],["Skin Tone",result.skinTone],["Undertone",result.undertone],["Eye Shape",result.eyeShape],["Jawline",result.jawline],["Cheekbones",result.cheekbones]].filter(([,v])=>v).map(([l,v])=>(
-              <div key={l}><div style={{fontSize:7,color:T.textMuted,letterSpacing:2,marginBottom:2}}>{l}</div><div style={{fontSize:13,color:T.text,textTransform:"capitalize"}}>{v}</div></div>
-            ))}
-          </div>
-          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-            {result.features?.map((f,i)=><div key={i} style={{fontSize:7,color:T.accent,border:`1px solid ${T.accentBorder}`,padding:"3px 9px",letterSpacing:1}}>{f}</div>)}
-          </div>
-        </div>
+        <MediaPipeMakeupStudio T={T} result={result} scans={scans} occ={occ} glam={glam}/>
+        <AIFaceAnalysisCard T={T} result={result}/>
         <div style={{fontSize:8,letterSpacing:4,color:T.accent,marginBottom:10}}>STEP-BY-STEP TUTORIAL</div>
         <div style={{display:"flex",gap:5,marginBottom:11,flexWrap:"wrap"}}>
           {steps.map((_,i)=><button key={i} style={{width:30,height:30,background:step===i?T.accentDim:T.bgCard,border:`1px solid ${step===i?T.accent:T.border}`,color:step===i?T.accent:T.textMuted,fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s"}} onClick={()=>setStep(i)}>{i+1}</button>)}
@@ -1652,212 +2340,6 @@ function Looks({T, looks}) {
     </div>
   );
 }
-
-
-// ─── APPLY LOOK SCREEN — FRONT / SIDE / LIVE MAPPING ─────────
-function ApplyLookScreen({ T, result, scans, preview, onClose }) {
-  const videoRef = useRef(null);
-  const streamRef = useRef(null);
-  const [view, setView] = useState("front");
-  const [step, setStep] = useState(0);
-  const [liveReady, setLiveReady] = useState(false);
-  const [liveError, setLiveError] = useState("");
-
-  const sideFace = scans?.left || scans?.right || preview;
-  const currentImage = view === "side" ? sideFace : preview;
-
-  const tutorialSteps = [
-    { id: "base", title: "Skin / Base", instruction: result?.tutorial?.step1?.instruction || "Even out the complexion softly before color placement.", zone: "base", color: "rgba(230,190,160,0.18)" },
-    { id: "contour", title: "Contour", instruction: result?.faceDNA?.placementMap?.contour || result?.tutorial?.step3?.instruction || "Apply contour under cheekbones and softly along the jawline.", zone: "contour", color: "rgba(95,55,35,0.30)" },
-    { id: "blush", title: "Blush", instruction: result?.faceDNA?.placementMap?.blush || result?.tutorial?.step4?.instruction || "Place blush on the lifted cheek area and blend upward.", zone: "blush", color: "rgba(235,105,135,0.34)" },
-    { id: "highlight", title: "Highlight", instruction: result?.faceDNA?.placementMap?.highlight || "Add glow to cheekbones, bridge of nose, and inner face high points.", zone: "highlight", color: "rgba(255,235,170,0.33)" },
-    { id: "eyes", title: "Eyes", instruction: result?.faceDNA?.placementMap?.eyeshadow || result?.tutorial?.step5?.instruction || "Apply the palette shade across the lid and blend softly at the outer corner.", zone: "eyes", color: "rgba(145,85,120,0.34)" },
-    { id: "lips", title: "Lips", instruction: result?.faceDNA?.placementMap?.lips || result?.tutorial?.step7?.instruction || "Apply the selected lip shade and soften the edges for balance.", zone: "lips", color: "rgba(165,35,70,0.48)" },
-  ];
-
-  const active = tutorialSteps[step];
-  const isFinal = step >= tutorialSteps.length - 1;
-
-  useEffect(() => {
-    if (view !== "live") {
-      streamRef.current?.getTracks()?.forEach(t => t.stop());
-      streamRef.current = null;
-      setLiveReady(false);
-      return;
-    }
-
-    let mounted = true;
-    setLiveError("");
-    setLiveReady(false);
-
-    navigator.mediaDevices?.getUserMedia({ video: { facingMode: "user" }, audio: false })
-      .then(stream => {
-        if (!mounted) {
-          stream.getTracks().forEach(t => t.stop());
-          return;
-        }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.onloadedmetadata = () => setLiveReady(true);
-        }
-      })
-      .catch(() => {
-        if (mounted) setLiveError("Camera permission is needed for live FaceMesh preview.");
-      });
-
-    return () => {
-      mounted = false;
-      streamRef.current?.getTracks()?.forEach(t => t.stop());
-      streamRef.current = null;
-    };
-  }, [view]);
-
-  const showFinalLook = () => setStep(tutorialSteps.length - 1);
-
-  return (
-    <div style={{minHeight:"100vh",background:T.bg,fontFamily:FF,maxWidth:480,margin:"0 auto",position:"relative",overflow:"hidden"}}>
-      <div style={{position:"fixed",inset:0,background:T.heroGlow,pointerEvents:"none"}}/>
-      <div style={{position:"sticky",top:0,zIndex:20,background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"15px 18px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <button onClick={onClose} style={{background:"transparent",border:"none",color:T.textMuted,fontSize:10,letterSpacing:2,cursor:"pointer"}}>← RESULTS</button>
-        <div style={{fontSize:10,letterSpacing:4,color:T.accent}}>APPLY LOOK</div>
-        <button onClick={showFinalLook} style={{background:"transparent",border:"none",color:T.accent,fontSize:9,letterSpacing:2,cursor:"pointer"}}>FINAL</button>
-      </div>
-
-      <div style={{padding:18,position:"relative",zIndex:1}}>
-        <div style={{display:"flex",gap:8,marginBottom:14}}>
-          {[
-            ["front","FRONT"],
-            ["side","LEFT / RIGHT"],
-            ["live","LIVE FACEMESH"]
-          ].map(([id,label]) => (
-            <button key={id} onClick={()=>setView(id)} style={{
-              flex:1,
-              background:view===id?T.accentDim:T.bgCard,
-              border:`1px solid ${view===id?T.accent:T.border}`,
-              color:view===id?T.accent:T.textMuted,
-              padding:"10px 6px",
-              fontSize:8,
-              letterSpacing:2,
-              cursor:"pointer",
-              fontFamily:FF
-            }}>{label}</button>
-          ))}
-        </div>
-
-        <div style={{position:"relative",background:"#000",border:`1px solid ${T.border}`,overflow:"hidden",aspectRatio:"3/4",marginBottom:14}}>
-          {view === "live" ? (
-            <>
-              {liveError ? (
-                <div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",textAlign:"center",padding:30,color:"#fff",fontSize:12,lineHeight:1.7}}>
-                  {liveError}
-                </div>
-              ) : (
-                <>
-                  <video ref={videoRef} autoPlay playsInline muted style={{width:"100%",height:"100%",objectFit:"cover",transform:"scaleX(-1)"}}/>
-                  {!liveReady && (
-                    <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.72)",color:"#fff",fontSize:11,letterSpacing:2,textAlign:"center",padding:30}}>
-                      Preparing FaceMesh mapping…<br/>Hold your face inside the frame.
-                    </div>
-                  )}
-                  <MakeupOverlay step={active} finalLook={isFinal} live />
-                </>
-              )}
-            </>
-          ) : (
-            <>
-              {currentImage ? (
-                <img src={currentImage} alt="Selected face" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-              ) : (
-                <div style={{height:"100%",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:12,textAlign:"center",padding:30}}>
-                  Existing scan photo not found.
-                </div>
-              )}
-              <MakeupOverlay step={active} finalLook={isFinal} side={view==="side"} />
-            </>
-          )}
-
-          <div style={{position:"absolute",left:12,top:12,background:"rgba(0,0,0,0.55)",color:"#fff",padding:"7px 10px",fontSize:8,letterSpacing:2}}>
-            {view==="live" ? "LIVE ADJUSTMENT" : view==="side" ? "SIDE MAPPING" : "FRONT MAPPING"}
-          </div>
-        </div>
-
-        <div style={{background:T.bgCard,border:`1px solid ${T.accentBorder}`,padding:15,marginBottom:12}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <div style={{fontSize:8,letterSpacing:3,color:T.accent}}>STEP {step+1} OF {tutorialSteps.length}</div>
-            <div style={{fontSize:18}}>{active.id==="lips"?"💋":active.id==="eyes"?"👁️":active.id==="blush"?"🌸":active.id==="contour"?"◒":active.id==="highlight"?"✨":"💧"}</div>
-          </div>
-          <div style={{fontSize:16,color:T.text,fontWeight:300,marginBottom:8}}>{active.title}</div>
-          <div style={{fontSize:12,color:T.textSub,lineHeight:1.75}}>{active.instruction}</div>
-        </div>
-
-        <div style={{display:"flex",gap:8,marginBottom:12}}>
-          <button disabled={step===0} onClick={()=>setStep(s=>Math.max(0,s-1))} style={{flex:1,background:T.bgCard,border:`1px solid ${T.border}`,color:step===0?T.textMuted:T.textSub,padding:13,fontSize:9,letterSpacing:2,cursor:step===0?"default":"pointer",fontFamily:FF}}>← PREV</button>
-          <button onClick={()=>setStep(s=>Math.min(tutorialSteps.length-1,s+1))} style={{flex:1,background:T.btn,border:"none",color:T.btnText,padding:13,fontSize:9,letterSpacing:2,cursor:"pointer",boxShadow:T.shadowGold,fontFamily:FF}}>
-            {isFinal ? "FINAL LOOK ✓" : "APPLY NEXT →"}
-          </button>
-        </div>
-
-        {isFinal && (
-          <div style={{background:T.accentDim,border:`1px solid ${T.accentBorderHi}`,padding:15,textAlign:"center"}}>
-            <div style={{fontSize:20,marginBottom:6}}>✨</div>
-            <div style={{fontSize:14,color:T.text,marginBottom:6}}>Final Look Ready</div>
-            <div style={{fontSize:10,color:T.textMuted,lineHeight:1.6}}>All tutorial steps are now layered on the selected face view. Switch between Front, Side, and Live FaceMesh to compare.</div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function MakeupOverlay({ step, finalLook, side=false, live=false }) {
-  const zones = finalLook
-    ? ["base","contour","blush","highlight","eyes","lips"]
-    : [step?.zone];
-
-  const show = z => zones.includes(z);
-
-  return (
-    <div style={{position:"absolute",inset:0,pointerEvents:"none"}}>
-      {show("base") && <div style={{position:"absolute",inset:"12% 16% 18%",borderRadius:"45%",background:"rgba(230,190,160,0.12)",mixBlendMode:"screen",filter:"blur(10px)"}}/>}
-
-      {show("contour") && (
-        <>
-          <div style={{position:"absolute",top:side?"35%":"38%",left:side?"50%":"14%",width:"18%",height:"34%",background:"rgba(75,45,32,0.30)",borderRadius:"60%",transform:side?"rotate(-18deg)":"rotate(-22deg)",filter:"blur(12px)",mixBlendMode:"multiply"}}/>
-          {!side && <div style={{position:"absolute",top:"38%",right:"14%",width:"18%",height:"34%",background:"rgba(75,45,32,0.30)",borderRadius:"60%",transform:"rotate(22deg)",filter:"blur(12px)",mixBlendMode:"multiply"}}/>}
-          <div style={{position:"absolute",bottom:"22%",left:side?"42%":"28%",width:side?"35%":"44%",height:"8%",background:"rgba(75,45,32,0.20)",borderRadius:"50%",filter:"blur(14px)",mixBlendMode:"multiply"}}/>
-        </>
-      )}
-
-      {show("blush") && (
-        <>
-          <div style={{position:"absolute",top:"45%",left:side?"52%":"20%",width:"24%",height:"15%",background:"rgba(235,105,135,0.34)",borderRadius:"50%",transform:"rotate(-12deg)",filter:"blur(10px)",mixBlendMode:"screen"}}/>
-          {!side && <div style={{position:"absolute",top:"45%",right:"20%",width:"24%",height:"15%",background:"rgba(235,105,135,0.34)",borderRadius:"50%",transform:"rotate(12deg)",filter:"blur(10px)",mixBlendMode:"screen"}}/>}
-        </>
-      )}
-
-      {show("highlight") && (
-        <>
-          <div style={{position:"absolute",top:"38%",left:side?"57%":"28%",width:"18%",height:"8%",background:"rgba(255,235,170,0.32)",borderRadius:"50%",filter:"blur(7px)",mixBlendMode:"screen"}}/>
-          {!side && <div style={{position:"absolute",top:"38%",right:"28%",width:"18%",height:"8%",background:"rgba(255,235,170,0.32)",borderRadius:"50%",filter:"blur(7px)",mixBlendMode:"screen"}}/>}
-          {!side && <div style={{position:"absolute",top:"34%",left:"47%",width:"6%",height:"25%",background:"rgba(255,235,170,0.24)",borderRadius:"50%",filter:"blur(6px)",mixBlendMode:"screen"}}/>}
-        </>
-      )}
-
-      {show("eyes") && (
-        <>
-          <div style={{position:"absolute",top:"32%",left:side?"49%":"24%",width:"20%",height:"8%",background:"rgba(145,85,120,0.36)",borderRadius:"50%",filter:"blur(5px)",mixBlendMode:"multiply"}}/>
-          {!side && <div style={{position:"absolute",top:"32%",right:"24%",width:"20%",height:"8%",background:"rgba(145,85,120,0.36)",borderRadius:"50%",filter:"blur(5px)",mixBlendMode:"multiply"}}/>}
-        </>
-      )}
-
-      {show("lips") && <div style={{position:"absolute",top:"66%",left:side?"48%":"36%",width:side?"24%":"28%",height:"7%",background:"rgba(165,35,70,0.50)",borderRadius:"50%",filter:"blur(4px)",mixBlendMode:"multiply"}}/>}
-
-      <div style={{position:"absolute",inset:0,boxShadow:"inset 0 0 70px rgba(0,0,0,0.18)"}}/>
-    </div>
-  );
-}
-
 
 // ─── PROFILE (with scan history!) ────────────────────────────
 function Profile({T, profile, preview, hasFullScan, startCamera, scanHistory, events}) {
